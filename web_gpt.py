@@ -1,175 +1,96 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
+import datetime
 
 # --- 1. AYARLAR & API ---
 API_KEY = "AIzaSyDH0RWc4G2mU4ImwWx748GFd-oC80bJl3g"
 genai.configure(api_key=API_KEY)
+st.set_page_config(page_title="ÖmerGPT Pro", page_icon="🤖", layout="wide")
 
-# Sayfa Genişletme ve Başlık
-st.set_page_config(page_title="ÖmerGPT Ultra Pro", page_icon="🤖", layout="wide")
-
-# --- 2. GOOGLE TARZI ÖZEL CSS (image_8.png'den esinlenildi) ---
+# --- 2. GOOGLE GEMINI STYLE CSS ---
 st.markdown("""
 <style>
-    /* Ana Kenar Çubuğu Arka Planı */
-    [data-testid="stSidebar"] {
-        background-color: #1a1b1e !important; /* Çok Koyu Gri/Siyah */
-        color: #e3e3e3 !important;
-        border-right: 1px solid #3c4043;
+    [data-testid="stSidebar"] { background-color: #131314 !important; border-right: 1px solid #444746; }
+    .stButton > button { 
+        background-color: #1e1f20 !important; color: #e3e3e3 !important; 
+        border: 1px solid #444746 !important; border-radius: 24px !important; 
+        width: 100%; transition: 0.3s; text-align: left; padding-left: 20px;
     }
-
-    /* Menü Başlıkları (Öğelerim, Not Defterleri vb.) */
-    .st-emotion-cache-10o5uor {
-        color: #e3e3e3 !important;
-        font-family: 'Google Sans', Roboto, Arial, sans-serif !important;
-        font-weight: 500 !important;
-        font-size: 1.1rem !important;
-        opacity: 0.9;
+    .stButton > button:hover { background-color: #333537 !important; border-color: #8ab4f8 !important; }
+    .chat-history-item { 
+        padding: 10px; border-radius: 8px; cursor: pointer; color: #e3e3e3; 
+        font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-
-    /* Buton Tarzı (Sohbeti Sıfırla) */
-    div.stButton > button {
-        background-color: transparent !important;
-        color: #e3e3e3 !important;
-        border: 1px solid #5f6368 !important;
-        border-radius: 20px !important; /* Oval köşeler */
-        padding: 8px 20px !important;
-        font-family: 'Google Sans', Roboto, sans-serif !important;
-        transition: background-color 0.3s, border-color 0.3s;
-        width: 100%;
-    }
-    div.stButton > button:hover {
-        background-color: #303134 !important;
-        border-color: #8ab4f8 !important; /* Google Mavisi hover */
-    }
-
-    /* Link Tarzı (Google, YouTube) */
-    .stMarkdown a {
-        color: #8ab4f8 !important; /* Açık Mavi Linkler */
-        text-decoration: none !important;
-        font-family: 'Google Sans', Roboto, sans-serif !important;
-        font-weight: 400;
-        opacity: 0.9;
-    }
-    .stMarkdown a:hover {
-        text-decoration: underline !important;
-        opacity: 1;
-    }
-    
-    /* Simge ve Yazı Hizalama */
-    .side-item {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 10px 0;
-    }
+    .chat-history-item:hover { background-color: #282a2d; }
+    .sidebar-title { color: #e3e3e3; font-family: 'Google Sans', sans-serif; font-weight: 500; padding: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. MODEL VE FONKSİYONLAR ---
-# (Önceki hatasız model fonksiyonlarını koruyoruz)
-def en_uygun_modeli_bul(gorsel_mi=False):
-    try:
-        modeller = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        if gorsel_mi:
-            for m in modeller:
-                if 'gemini-1.5-flash' in m: return m
-                if 'vision' in m: return m
-        else:
-            for m in modeller:
-                if 'gemini-1.5-flash' in m: return m
-                if 'gemini-pro' in m and 'vision' not in m: return m
-        return modeller[0]
-    except:
-        return 'gemini-pro'
+# --- 3. HAFIZA SİSTEMİ ---
+if "all_chats" not in st.session_state: st.session_state.all_chats = {}
+if "current_chat_id" not in st.session_state: st.session_state.current_chat_id = "Yeni Sohbet"
+if "messages" not in st.session_state: st.session_state.messages = []
 
+# --- 4. MODEL FONKSİYONU ---
 def model_yanit_al(prompt, img=None):
     try:
-        model_adi = en_uygun_modeli_bul(gorsel_mi=True if img else False)
-        model = genai.GenerativeModel(model_adi)
-        if img:
-            res = model.generate_content([prompt, img])
-        else:
-            res = model.generate_content(prompt)
-        return res.text
-    except Exception as e:
-        return f"Hata: {str(e)}"
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        return model.generate_content([prompt, img]).text if img else model.generate_content(prompt).text
+    except Exception as e: return f"Hata: {str(e)}"
 
-# --- 4. YAN MENÜ (image_8.png Düzeni) ---
+# --- 5. KENAR ÇUBUĞU (GOOGLE DÜZENİ) ---
 with st.sidebar:
-    # Google Tarzı Menü Başlığı
-    st.markdown('<div class="side-item"><span style="font-size:1.5rem;">🛠️</span> <span style="font-size:1.2rem; font-weight:500;">Menü</span></div>', unsafe_allow_html=True)
-    st.markdown("---") # Ayırıcı Çizgi
-
-    # Buton Bölümü (Sohbeti Sıfırla)
-    st.markdown("### Kontroller")
-    if st.button("🧹 Sohbeti Sıfırla"):
+    st.markdown('<div class="sidebar-title" style="font-size:1.5rem;">🤖 ÖmerGPT</div>', unsafe_allow_html=True)
+    
+    if st.button("➕ Yeni Sohbet"):
+        if st.session_state.messages: # Mevcut sohbeti kaydet
+            st.session_state.all_chats[st.session_state.current_chat_id] = st.session_state.messages
         st.session_state.messages = []
+        st.session_state.current_chat_id = f"Sohbet {datetime.datetime.now().strftime('%H:%M:%S')}"
         st.rerun()
-    
+
     st.markdown("---")
-
-    # Linkler Bölümü (image_8.png'deki "Öğelerim" düzeni gibi)
-    st.markdown("### Hızlı Linkler")
+    st.markdown('<div class="sidebar-title">📜 Yakın Zamandaki Sohbetler</div>', unsafe_allow_html=True)
     
-    # Google Linki (Simge + Yazı)
-    st.markdown(f"""
-    <div class="side-item">
-        <img src="https://www.google.com/images/branding/product/ico/googleg_lodp.ico" width="20">
-        <a href="https://google.com" target="_blank">Google'ı Aç</a>
-    </div>
-    """, unsafe_allow_html=True)
+    # Eski sohbetleri listele
+    for chat_id in list(st.session_state.all_chats.keys()):
+        if st.button(f"💬 {chat_id}", key=chat_id):
+            st.session_state.messages = st.session_state.all_chats[chat_id]
+            st.session_state.current_chat_id = chat_id
+            st.rerun()
 
-    # YouTube Linki (Simge + Yazı)
-    st.markdown(f"""
-    <div class="side-item">
-        <img src="https://www.youtube.com/s/desktop/28b67e7a/img/favicon_32x32.png" width="20">
-        <a href="https://youtube.com" target="_blank">YouTube'u Aç</a>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown('🌐 [Google](https://google.com) | 📺 [YouTube](https://youtube.com)')
 
-# --- 5. ANA İÇERİK (Metin ve Görsel Analiz) ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# --- 6. ANA EKRAN ---
+st.title(f"🚀 {st.session_state.current_chat_id}")
 
-st.title("🤖 ÖmerGPT Ultra Pro")
-st.write("Google arayüzlü, tam özellikli yapay zeka.")
-
-# (Ana içerik kısmı öncekiyle aynı kalıyor, sadece görsel analizi buraya koyuyoruz)
-st.write("### 📸 Görsel Analiz")
-col1, col2 = st.columns(2)
-with col1:
-    up = st.file_uploader("Fotoğraf Yükle", type=["jpg", "png", "jpeg"])
+col1, col2 = st.columns([3, 1])
 with col2:
     cam = st.camera_input("Fotoğraf Çek")
+    up = st.file_uploader("Dosya Yükle", type=["jpg", "png", "jpeg"])
 
-secilen_resim = cam if cam else up
+resim = cam if cam else up
+if resim:
+    img = Image.open(resim)
+    st.image(img, width=250)
+    if st.button("🔍 Görseli Analiz Et"):
+        st.info(model_yanit_al("Bu fotoğrafta ne var?", img))
 
-if secilen_resim:
-    img = Image.open(secilen_resim)
-    st.image(img, width=300)
-    soru = st.text_input("Görsel hakkında sorun:", value="Bu fotoğrafta ne görüyorsun? Tahmin et.")
-    if st.button("🤖 Görseli Analiz Et"):
-        with st.spinner("ÖmerGPT bakıyor..."):
-            cevap = model_yanit_al(soru, img)
-            st.success(f"ÖmerGPT: {cevap}")
-
-st.markdown("---")
-
-# Sohbet Bölümü
-st.write("### 💬 Sohbet")
+# Mesajları Görüntüle
 for m in st.session_state.messages:
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
+    with st.chat_message(m["role"]): st.markdown(m["content"])
 
-if prompt := st.chat_input("Naber kanka?"):
+# Giriş Alanı
+if prompt := st.chat_input("Mesajını buraya yaz..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    with st.chat_message("user"): st.markdown(prompt)
     
     with st.spinner("Düşünüyorum..."):
         cevap = model_yanit_al(prompt)
-        with st.chat_message("assistant"):
-            st.markdown(cevap)
+        with st.chat_message("assistant"): st.markdown(cevap)
         st.session_state.messages.append({"role": "assistant", "content": cevap})
+    
+    # Her mesajda otomatik kaydet
+    st.session_state.all_chats[st.session_state.current_chat_id] = st.session_state.messages
