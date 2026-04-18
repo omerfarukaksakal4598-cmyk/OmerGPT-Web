@@ -1,91 +1,78 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
-import webbrowser
 
 # --- 1. AYARLAR ---
+# Kendi API Key'ini buraya yapıştır
 API_KEY = "AIzaSyDH0RWc4G2mU4ImwWx748GFd-oC80bJl3g"
 genai.configure(api_key=API_KEY)
 
 st.set_page_config(page_title="ÖmerGPT Ultra Web", page_icon="🤖", layout="wide")
 
-# --- 2. MODEL KURULUMU ---
-def model_getir():
-    return genai.GenerativeModel(
-        model_name='gemini-1.5-flash',
-        system_instruction="Senin adın OmerGPT. Kullanıcının kankasısın. Cevapların çok kısa, samimi ve net olsun. Asla emoji kullanma."
-    )
+# --- 2. MODEL ÇAĞIRMA FONKSİYONU ---
+def model_yanit_al(prompt, img=None):
+    try:
+        if img:
+            # Görsel varsa görsel modelini kullan
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            res = model.generate_content([prompt, img])
+        else:
+            # Sadece metin varsa metin modelini kullan
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            res = model.generate_content(prompt)
+        return res.text
+    except Exception as e:
+        return f"Hata: {str(e)}"
 
-# --- 3. ARAYÜZ VE STİL ---
+# --- 3. ARAYÜZ ---
 st.title("🚀 ÖmerGPT Ultra Web")
-st.subheader("Her şey tek ekranda!")
 
-# Sohbet hafızası
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Yan Menü (PC Komutları ve Butonlar)
+# Yan Menü
 with st.sidebar:
-    st.header("🛠️ Hızlı Komutlar")
-    if st.button("🌐 Google'ı Aç"):
-        st.write("Bilgisayarda olsaydık açardım ama buradan link verebilirim:")
-        st.markdown("[Google'a Git](https://google.com)")
-    
-    if st.button("📺 YouTube'u Aç"):
-        st.markdown("[YouTube'a Git](https://youtube.com)")
-        
-    if st.button("🧹 Sohbeti Temizle"):
+    st.header("🛠️ Menü")
+    if st.button("🧹 Sohbeti Sıfırla"):
         st.session_state.messages = []
         st.rerun()
+    st.markdown("[🌐 Google](https://google.com)")
+    st.markdown("[📺 YouTube](https://youtube.com)")
 
-# --- 4. GÖRSEL ÖZELLİKLER (KAMERA VE DOSYA) ---
+# --- 4. GÖRSEL BÖLÜMÜ ---
 st.write("### 📸 Görsel Analiz")
 col1, col2 = st.columns(2)
-
 with col1:
-    uploaded_file = st.file_uploader("Bir fotoğraf yükle...", type=["jpg", "png", "jpeg"])
+    up = st.file_uploader("Fotoğraf Yükle", type=["jpg", "png", "jpeg"])
 with col2:
-    camera_file = st.camera_input("Veya fotoğraf çek!")
+    cam = st.camera_input("Fotoğraf Çek")
 
-resim = camera_file if camera_file else uploaded_file
+secilen_resim = cam if cam else up
 
-if resim:
-    st.image(resim, caption="Analiz edilecek görsel", width=300)
-    img_soru = st.text_input("Görselle ilgili sorun nedir?")
-    if st.button("🤖 Görseli Yorumla"):
-        with st.spinner("ÖmerGPT bakıyor..."):
-            model = model_getir()
-            img = Image.open(resim)
-            response = model.generate_content([img_soru if img_soru else "Bu fotoğrafta ne var? Kısaca anlat.", img])
-            st.success(f"ÖmerGPT: {response.text}")
+if secilen_resim:
+    img = Image.open(secilen_resim)
+    st.image(img, width=300)
+    soru = st.text_input("Görsel hakkında sorun:", value="Bu fotoğrafta ne var?")
+    if st.button("🤖 Görseli Analiz Et"):
+        with st.spinner("Bakıyorum..."):
+            cevap = model_yanit_al(soru, img)
+            st.success(f"ÖmerGPT: {cevap}")
 
 st.markdown("---")
 
-# --- 5. SOHBET AKIŞI ---
+# --- 5. SOHBET BÖLÜMÜ ---
 st.write("### 💬 Sohbet")
+for m in st.session_state.messages:
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
 
-# Mesajları göster
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# Yeni mesaj girişi
 if prompt := st.chat_input("Naber kanka?"):
-    # Kullanıcı mesajı
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
-
-    # Bot cevabı
-    try:
-        with st.spinner("Düşünüyorum..."):
-            model = model_getir()
-            # Hafızayı modele gönder (son 5 mesaj)
-            chat = model.start_chat(history=[])
-            response = chat.send_message(prompt)
-            
-            with st.chat_message("assistant"):
-                st.markdown(response.text)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
-    except Exception as e:
-        st.error(f"Bir hata oldu knkk: {e}")
+    
+    with st.spinner("Düşünüyorum..."):
+        cevap = model_yanit_al(prompt)
+        with st.chat_message("assistant"):
+            st.markdown(cevap)
+        st.session_state.messages.append({"role": "assistant", "content": cevap})
