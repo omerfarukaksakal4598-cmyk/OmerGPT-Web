@@ -1,5 +1,5 @@
 streamlit
 google-generativeai
 Pillow
-streamlit-webrtc
-av
+pypdf
+docx2txt
