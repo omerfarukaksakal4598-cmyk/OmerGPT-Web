@@ -1,40 +1,43 @@
 import streamlit as st
-import google.generativeai as genai
+import requests
+import json
 from PIL import Image
 import pypdf
 import docx2txt
 
-# --- 1. AYARLAR & API ---
-API_KEY = "AIzaSyDH-Kz3JArq8qTPcAx4sVFYLhjdocVk764"
-genai.configure(api_key=API_KEY)
+# --- 1. AYARLAR & OPENROUTER API ---
+# Yeni OpenRouter anahtarını buraya ekledim kanka
+OPENROUTER_API_KEY = "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"
 
 st.set_page_config(page_title="ÖmerGPT Ultra Pro", page_icon="🤖", layout="wide")
 
-# --- 2. AKILLI MODEL SEÇİCİ (404 HATASINI KESİN ÇÖZER) ---
-def get_working_model():
+# --- 2. OPENROUTER YANIT FONKSİYONU ---
+def model_yanit_al(prompt, context_text=""):
     try:
-        # Senin anahtarının izin verdiği tüm modelleri listele
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Varsa flash'ı seç, yoksa listedeki ilk çalışan modeli al
-        for m in available_models:
-            if '1.5-flash' in m: return m
-        return available_models[0]
-    except:
-        return 'gemini-pro' # Liste alınamazsa klasik modele dön
-
-def model_yanit_al(prompt, contents=None):
-    try:
-        active_model_name = get_working_model()
-        model = genai.GenerativeModel(model_name=active_model_name)
-        if contents:
-            response = model.generate_content([prompt] + contents)
+        # OpenRouter üzerinden Gemini 1.5 Flash modelini çağırıyoruz
+        response = requests.post(
+            url="https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            data=json.dumps({
+                "model": "google/gemini-flash-1.5", # En hızlı ve stabil model
+                "messages": [
+                    {"role": "user", "content": f"{context_text}\n\nSoru: {prompt}"}
+                ]
+            })
+        )
+        
+        result = response.json()
+        if "choices" in result:
+            return result["choices"][0]["message"]["content"]
         else:
-            response = model.generate_content(prompt)
-        return response.text
+            return f"🚨 API Hatası: {result.get('error', {}).get('message', 'Bilinmeyen hata')}"
     except Exception as e:
-        return f"🚨 Bağlantı Kurulamadı: {str(e)}"
+        return f"🚨 Bağlantı Hatası: {str(e)}"
 
-# --- 3. TASARIM VE GİRİŞ SİSTEMİ ---
+# --- 3. TASARIM (CSS) ---
 if "user" not in st.session_state: st.session_state.user = None
 if "messages" not in st.session_state: st.session_state.messages = []
 
@@ -51,7 +54,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ÜST BAR
+# --- 4. ÜST BAR & GİRİŞ ---
 c1, c2 = st.columns([5, 1])
 with c2:
     if st.session_state.user is None:
@@ -63,14 +66,14 @@ with c2:
             st.rerun()
 
 if st.session_state.get("show_login") and not st.session_state.user:
-    with st.expander("Giriş Paneli", expanded=True):
+    with st.expander("Hesap Girişi", expanded=True):
         u = st.text_input("Kullanıcı Adı")
-        if st.button("Sistemi Aç"):
-            st.session_state.user = u if u else "Ömer Faruk"
+        if st.button("Sistemi Başlat"):
+            st.session_state.user = u if u else "Ömer"
             st.session_state.show_login = False
             st.rerun()
 
-# --- 4. YAN MENÜ (İSTEDİĞİN BUTONLAR) ---
+# --- 5. YAN MENÜ (ISTEDIĞIN TÜM BUTONLAR) ---
 with st.sidebar:
     st.markdown("<h2 style='text-align:center;'>🤖 ÖmerGPT</h2>", unsafe_allow_html=True)
     if st.button("➕ Yeni Sohbet"):
@@ -78,31 +81,30 @@ with st.sidebar:
         st.rerun()
     st.markdown("---")
     st.write("🔗 **Hızlı Erişim**")
+    # İstediğin linkler burada kanka
     st.markdown('<a href="https://www.google.com" target="_blank" class="nav-btn">🌐 Google</a>', unsafe_allow_html=True)
     st.markdown('<a href="https://www.youtube.com" target="_blank" class="nav-btn">📺 YouTube</a>', unsafe_allow_html=True)
     st.markdown("---")
-    if st.button("🧹 Geçmişi Sil"):
+    if st.button("🧹 Sohbeti Sıfırla"):
         st.session_state.messages = []
         st.rerun()
 
-# --- 5. ANA EKRAN & DOSYA ANALİZİ ---
+# --- 6. ANA EKRAN & DOSYA ANALİZİ ---
 st.title("🚀 ÖmerGPT Ultra Pro")
 
-up = st.file_uploader("Dosya/Resim Yükle", type=["pdf", "docx", "png", "jpg", "jpeg"])
-extra = []
+up = st.file_uploader("Dosya Analizi (PDF, Word, Resim)", type=["pdf", "docx", "png", "jpg", "jpeg"])
+context_text = ""
 
 if up:
     if up.type == "application/pdf":
         reader = pypdf.PdfReader(up)
-        extra.append(f"PDF İçeriği: {''.join([p.extract_text() for p in reader.pages])}")
-        st.success("PDF Analizi Hazır!")
+        context_text = f"Döküman İçeriği: {''.join([p.extract_text() for p in reader.pages])}"
+        st.success("PDF Analize Hazır!")
     elif up.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        extra.append(f"Word İçeriği: {docx2txt.process(up)}")
-        st.success("Word Analizi Hazır!")
+        context_text = f"Word İçeriği: {docx2txt.process(up)}"
+        st.success("Word Analize Hazır!")
     elif up.type.startswith("image"):
-        img = Image.open(up)
-        extra.append(img)
-        st.image(img, width=200)
+        st.warning("Not: OpenRouter üzerinden görsel analizi için model ayarı gerekebilir, şu an metin desteği aktif.")
 
 # SOHBET AKIŞI
 for m in st.session_state.messages:
@@ -112,7 +114,7 @@ if prompt := st.chat_input("Naber kanka?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
     
-    with st.spinner("ÖmerGPT en uygun modeli seçiyor ve yanıtlıyor..."):
-        cevap = model_yanit_al(prompt, extra if extra else None)
+    with st.spinner("ÖmerGPT (OpenRouter) yanıtlıyor..."):
+        cevap = model_yanit_al(prompt, context_text)
         with st.chat_message("assistant"): st.markdown(cevap)
         st.session_state.messages.append({"role": "assistant", "content": cevap})
