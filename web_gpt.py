@@ -4,35 +4,33 @@ from PIL import Image
 import pypdf
 import docx2txt
 
-# --- 1. AYARLAR & YENİ API ---
+# --- 1. AYARLAR & API ---
 API_KEY = "AIzaSyBH-Kz3JArq8qTPcAx4sVFYLhjdocVk764"
 genai.configure(api_key=API_KEY)
 
 st.set_page_config(page_title="ÖmerGPT Ultra Pro", page_icon="🤖", layout="wide")
 
-# --- 2. DOSYA OKUMA FONKSİYONLARI ---
-def pdf_oku(file):
-    try:
-        reader = pypdf.PdfReader(file)
-        return "".join([page.extract_text() or "" for page in reader.pages])
-    except: return "PDF okuma hatası."
-
-def docx_oku(file):
-    try: return docx2txt.process(file)
-    except: return "Word okuma hatası."
-
-# --- 3. MODEL YANIT SİSTEMİ ---
+# --- 2. HATA ÖNLEYİCİ MODEL ÇAĞIRICI ---
 def model_yanit_al(prompt, contents=None):
-    try:
-        # En güncel flash modelini kullanıyoruz
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        if contents:
-            return model.generate_content([prompt] + contents).text
-        return model.generate_content(prompt).text
-    except Exception as e:
-        return f"Bağlantı hatası oluştu: {str(e)}"
+    # Google'ın kabul edebileceği tüm model isim varyasyonlarını sırayla dene
+    varyasyonlar = ['gemini-1.5-flash', 'models/gemini-1.5-flash', 'gemini-pro', 'models/gemini-pro']
+    
+    last_error = ""
+    for model_adi in varyasyonlar:
+        try:
+            model = genai.GenerativeModel(model_name=model_adi)
+            if contents:
+                response = model.generate_content([prompt] + contents)
+            else:
+                response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            last_error = str(e)
+            continue # Bu isim çalışmadıysa sonrakine geç
+            
+    return f"❌ Tüm bağlantı yolları denendi ama sonuç alınamadı. Hata: {last_error}"
 
-# --- 4. TASARIM (CSS) ---
+# --- 3. TASARIM VE GİRİŞ ---
 if "user" not in st.session_state: st.session_state.user = None
 if "messages" not in st.session_state: st.session_state.messages = []
 
@@ -43,14 +41,13 @@ st.markdown("""
         display: block; width: 100%; padding: 12px; margin: 8px 0; 
         background-color: #1e1f20; color: #8ab4f8 !important; 
         text-align: center; border-radius: 12px; text-decoration: none; 
-        border: 1px solid #444746; font-weight: bold; transition: 0.2s;
+        border: 1px solid #444746; font-weight: bold;
     }
     .nav-btn:hover { background-color: #282a2d; border-color: #8ab4f8; }
-    .stButton > button { border-radius: 20px !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 5. ÜST BAR & GİRİŞ SİSTEMİ ---
+# ÜST BAR
 c1, c2 = st.columns([5, 1])
 with c2:
     if st.session_state.user is None:
@@ -63,55 +60,47 @@ with c2:
 
 if st.session_state.get("show_login") and not st.session_state.user:
     with st.expander("Giriş Yap", expanded=True):
-        u_name = st.text_input("Kullanıcı Adı")
+        u = st.text_input("Kullanıcı Adı")
         if st.button("Onayla"):
-            st.session_state.user = u_name if u_name else "ÖmerGPT Kullanıcısı"
+            st.session_state.user = u if u else "ÖmerGPT"
             st.session_state.show_login = False
             st.rerun()
 
-# --- 6. YAN MENÜ (ISTEDIĞIN TÜM BUTONLAR) ---
+# --- 4. YAN MENÜ (ISTEDIĞIN TÜM ÖZELLİKLER) ---
 with st.sidebar:
     st.markdown("<h2 style='text-align:center;'>🤖 ÖmerGPT</h2>", unsafe_allow_html=True)
-    
     if st.button("➕ Yeni Sohbet"):
         st.session_state.messages = []
         st.rerun()
-    
     st.markdown("---")
-    st.write("🚀 **Hızlı Araçlar**")
-    
-    # Google ve YouTube butonların burada kanka
+    st.write("🚀 **Hızlı Linkler**")
     st.markdown('<a href="https://www.google.com" target="_blank" class="nav-btn">🌐 Google\'da Ara</a>', unsafe_allow_html=True)
     st.markdown('<a href="https://www.youtube.com" target="_blank" class="nav-btn">📺 YouTube\'u Aç</a>', unsafe_allow_html=True)
-    
     st.markdown("---")
-    if st.button("🧹 Sohbeti Temizle"):
+    if st.button("🧹 Sohbeti Sıfırla"):
         st.session_state.messages = []
         st.rerun()
-    
-    st.caption("v2.9 Pro - Kesintisiz Erişim")
 
-# --- 7. ANA EKRAN & DOSYA İŞLEME ---
+# --- 5. ANA EKRAN & ANALİZ ---
 st.title("🚀 ÖmerGPT Ultra Pro")
 
-up = st.file_uploader("Dosya Analizi (PDF, Word, Resim)", type=["pdf", "docx", "png", "jpg", "jpeg"])
-extra_content = []
+up = st.file_uploader("Dosya Analizi", type=["pdf", "docx", "png", "jpg", "jpeg"])
+extra = []
 
 if up:
     if up.type == "application/pdf":
-        text = pdf_oku(up)
-        extra_content.append(f"PDF İçeriği: {text}")
-        st.success("PDF Hazır!")
+        reader = pypdf.PdfReader(up)
+        extra.append(f"PDF Metni: {''.join([p.extract_text() for p in reader.pages])}")
+        st.success("PDF Yüklendi!")
     elif up.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        text = docx_oku(up)
-        extra_content.append(f"Word İçeriği: {text}")
-        st.success("Word Dosyası Hazır!")
+        extra.append(f"Word Metni: {docx2txt.process(up)}")
+        st.success("Word Yüklendi!")
     elif up.type.startswith("image"):
         img = Image.open(up)
-        extra_content.append(img)
+        extra.append(img)
         st.image(img, width=200)
 
-# Sohbet Akışı
+# SOHBET AKIŞI
 for m in st.session_state.messages:
     with st.chat_message(m["role"]): st.markdown(m["content"])
 
@@ -119,7 +108,7 @@ if prompt := st.chat_input("Naber kanka?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
     
-    with st.spinner("ÖmerGPT düşünüyor..."):
-        cevap = model_yanit_al(prompt, extra_content if extra_content else None)
+    with st.spinner("ÖmerGPT en iyi bağlantıyı arıyor..."):
+        cevap = model_yanit_al(prompt, extra if extra else None)
         with st.chat_message("assistant"): st.markdown(cevap)
         st.session_state.messages.append({"role": "assistant", "content": cevap})
