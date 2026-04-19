@@ -2,28 +2,40 @@ import streamlit as st
 import requests
 
 # --- 1. AYARLAR & API ---
-# Anahtarın buraya tam olarak eklendi knkk
 API_KEY = "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"
 
-st.set_page_config(page_title="ÖmerGPT Ultra", page_icon="🤖")
+st.set_page_config(page_title="ÖmerGPT Ultra Pro", page_icon="🤖")
 
-# --- 2. MODEL BAĞLANTISI ---
+# --- 2. HATA DEDEKTİFLİ YANIT SİSTEMİ ---
 def sohbet_et(mesaj):
     try:
         headers = {
             "Authorization": f"Bearer {API_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8501", 
+            "X-Title": "OmerGPT"
         }
         data = {
             "model": "meta-llama/llama-3.1-8b-instruct:free",
             "messages": [{"role": "user", "content": mesaj}]
         }
         response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
-        return response.json()['choices'][0]['message']['content']
+        
+        # OpenRouter'dan gelen ham cevabı kontrol et
+        res_json = response.json()
+        
+        if "choices" in res_json:
+            return res_json['choices'][0]['message']['content']
+        elif "error" in res_json:
+            # Hata mesajını ekrana bas ki ne olduğunu anlayalım
+            return f"🚨 OpenRouter Hatası: {res_json['error'].get('message', 'Bilinmeyen hata')}"
+        else:
+            return f"🚨 Beklenmedik Yanıt: {res_json}"
+            
     except Exception as e:
-        return f"🚨 Bağlantı Hatası: {e}"
+        return f"🚨 Bağlantı Hatası: {str(e)}"
 
-# --- 3. ARAYÜZ (SOL MENÜ) ---
+# --- 3. ARAYÜZ ---
 with st.sidebar:
     st.title("🤖 ÖmerGPT")
     st.markdown("---")
@@ -33,7 +45,6 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-# --- 4. SOHBET EKRANI ---
 st.title("🚀 ÖmerGPT Ultra Pro")
 
 if "messages" not in st.session_state:
@@ -48,7 +59,7 @@ if prompt := st.chat_input("Naber kanka?"):
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    with st.spinner("ÖmerGPT cevap veriyor..."):
+    with st.spinner("ÖmerGPT inceliyor..."):
         cevap = sohbet_et(prompt)
         with st.chat_message("assistant"):
             st.markdown(cevap)
