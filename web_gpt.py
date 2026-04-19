@@ -1,28 +1,55 @@
 import streamlit as st
 import requests
-import json
 
-# --- OPENROUTER ANAHTARIN ---
-# Kanka buradaki tırnakların içine OpenRouter'daki anahtarının TAMAMINI yapıştır
+# --- 1. AYARLAR & API ---
+# Anahtarın buraya tam olarak eklendi knkk
 API_KEY = "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"
 
-def model_yanit_al(prompt):
-    try:
-        response = requests.post(
-            url="https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {API_KEY}",
-                "HTTP-Referer": "http://localhost:8501", 
-                "X-Title": "OmerGPT"
-            },
-            data=json.dumps({
-                "model": "meta-llama/llama-3.1-8b-instruct:free", # En sağlam ücretsiz model
-                "messages": [{"role": "user", "content": prompt}]
-            })
-        )
-        res = response.json()
-        return res['choices'][0]['message']['content']
-    except Exception as e:
-        return f"🚨 Bağlantı Hatası: {str(e)}"
+st.set_page_config(page_title="ÖmerGPT Ultra", page_icon="🤖")
 
-# Arayüz ve Sohbet kodların zaten GitHub'da olduğu gibi kalsın...
+# --- 2. MODEL BAĞLANTISI ---
+def sohbet_et(mesaj):
+    try:
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": "meta-llama/llama-3.1-8b-instruct:free",
+            "messages": [{"role": "user", "content": mesaj}]
+        }
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
+        return response.json()['choices'][0]['message']['content']
+    except Exception as e:
+        return f"🚨 Bağlantı Hatası: {e}"
+
+# --- 3. ARAYÜZ (SOL MENÜ) ---
+with st.sidebar:
+    st.title("🤖 ÖmerGPT")
+    st.markdown("---")
+    st.markdown('<a href="https://www.google.com" target="_blank" style="text-decoration:none; color:#8ab4f8; font-weight:bold;">🌐 Google\'da Ara</a>', unsafe_allow_html=True)
+    st.markdown('<a href="https://www.youtube.com" target="_blank" style="text-decoration:none; color:#8ab4f8; font-weight:bold;">📺 YouTube\'u Aç</a>', unsafe_allow_html=True)
+    if st.button("🧹 Sohbeti Temizle"):
+        st.session_state.messages = []
+        st.rerun()
+
+# --- 4. SOHBET EKRANI ---
+st.title("🚀 ÖmerGPT Ultra Pro")
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for m in st.session_state.messages:
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
+
+if prompt := st.chat_input("Naber kanka?"):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    
+    with st.spinner("ÖmerGPT cevap veriyor..."):
+        cevap = sohbet_et(prompt)
+        with st.chat_message("assistant"):
+            st.markdown(cevap)
+        st.session_state.messages.append({"role": "assistant", "content": cevap})
