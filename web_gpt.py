@@ -6,38 +6,48 @@ import pypdf
 import docx2txt
 
 # --- 1. AYARLAR & OPENROUTER API ---
-# Yeni OpenRouter anahtarını buraya ekledim kanka
 OPENROUTER_API_KEY = "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"
 
 st.set_page_config(page_title="ÖmerGPT Ultra Pro", page_icon="🤖", layout="wide")
 
-# --- 2. OPENROUTER YANIT FONKSİYONU ---
+# --- 2. AKILLI YANIT SİSTEMİ (ENDPOINT HATASI ÇÖZÜCÜ) ---
 def model_yanit_al(prompt, context_text=""):
-    try:
-        # OpenRouter üzerinden Gemini 1.5 Flash modelini çağırıyoruz
-        response = requests.post(
-            url="https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            data=json.dumps({
-                "model": "google/gemini-flash-1.5", # En hızlı ve stabil model
-                "messages": [
-                    {"role": "user", "content": f"{context_text}\n\nSoru: {prompt}"}
-                ]
-            })
-        )
-        
-        result = response.json()
-        if "choices" in result:
-            return result["choices"][0]["message"]["content"]
-        else:
-            return f"🚨 API Hatası: {result.get('error', {}).get('message', 'Bilinmeyen hata')}"
-    except Exception as e:
-        return f"🚨 Bağlantı Hatası: {str(e)}"
+    # OpenRouter'ın kabul ettiği en stabil Gemini isimlerini sırayla dene
+    model_listesi = [
+        "google/gemini-flash-1.5-8b", 
+        "google/gemini-pro-1.5",
+        "google/gemini-flash-1.5"
+    ]
+    
+    for model_id in model_listesi:
+        try:
+            response = requests.post(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:8501",
+                    "X-Title": "OmerGPT"
+                },
+                data=json.dumps({
+                    "model": model_id,
+                    "messages": [
+                        {"role": "user", "content": f"{context_text}\n\nSoru: {prompt}"}
+                    ]
+                })
+            )
+            
+            result = response.json()
+            if "choices" in result:
+                return result["choices"][0]["message"]["content"]
+            # Eğer endpoint hatası alırsak döngü devam eder, bir sonraki modeli dener
+            continue 
+        except:
+            continue
+            
+    return "❌ Hiçbir model yanıt vermedi. Lütfen OpenRouter anahtarını veya internetini kontrol et kanka."
 
-# --- 3. TASARIM (CSS) ---
+# --- 3. TASARIM VE GİRİŞ SİSTEMİ ---
 if "user" not in st.session_state: st.session_state.user = None
 if "messages" not in st.session_state: st.session_state.messages = []
 
@@ -54,7 +64,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. ÜST BAR & GİRİŞ ---
+# ÜST BAR
 c1, c2 = st.columns([5, 1])
 with c2:
     if st.session_state.user is None:
@@ -66,14 +76,14 @@ with c2:
             st.rerun()
 
 if st.session_state.get("show_login") and not st.session_state.user:
-    with st.expander("Hesap Girişi", expanded=True):
+    with st.expander("Giriş Yap", expanded=True):
         u = st.text_input("Kullanıcı Adı")
-        if st.button("Sistemi Başlat"):
-            st.session_state.user = u if u else "Ömer"
+        if st.button("Sistemi Aç"):
+            st.session_state.user = u if u else "ÖmerGPT Dostu"
             st.session_state.show_login = False
             st.rerun()
 
-# --- 5. YAN MENÜ (ISTEDIĞIN TÜM BUTONLAR) ---
+# --- 4. YAN MENÜ (BUTONLAR) ---
 with st.sidebar:
     st.markdown("<h2 style='text-align:center;'>🤖 ÖmerGPT</h2>", unsafe_allow_html=True)
     if st.button("➕ Yeni Sohbet"):
@@ -81,7 +91,6 @@ with st.sidebar:
         st.rerun()
     st.markdown("---")
     st.write("🔗 **Hızlı Erişim**")
-    # İstediğin linkler burada kanka
     st.markdown('<a href="https://www.google.com" target="_blank" class="nav-btn">🌐 Google</a>', unsafe_allow_html=True)
     st.markdown('<a href="https://www.youtube.com" target="_blank" class="nav-btn">📺 YouTube</a>', unsafe_allow_html=True)
     st.markdown("---")
@@ -89,32 +98,28 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-# --- 6. ANA EKRAN & DOSYA ANALİZİ ---
+# --- 5. ANA EKRAN ---
 st.title("🚀 ÖmerGPT Ultra Pro")
 
-up = st.file_uploader("Dosya Analizi (PDF, Word, Resim)", type=["pdf", "docx", "png", "jpg", "jpeg"])
+up = st.file_uploader("Dosya Yükle", type=["pdf", "docx", "png", "jpg", "jpeg"])
 context_text = ""
 
 if up:
     if up.type == "application/pdf":
         reader = pypdf.PdfReader(up)
-        context_text = f"Döküman İçeriği: {''.join([p.extract_text() for p in reader.pages])}"
-        st.success("PDF Analize Hazır!")
-    elif up.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        context_text = f"Word İçeriği: {docx2txt.process(up)}"
-        st.success("Word Analize Hazır!")
+        context_text = f"Döküman Metni: {''.join([p.extract_text() for p in reader.pages])}"
+        st.success("PDF Hazır!")
     elif up.type.startswith("image"):
-        st.warning("Not: OpenRouter üzerinden görsel analizi için model ayarı gerekebilir, şu an metin desteği aktif.")
+        st.image(Image.open(up), width=200)
 
-# SOHBET AKIŞI
 for m in st.session_state.messages:
     with st.chat_message(m["role"]): st.markdown(m["content"])
 
-if prompt := st.chat_input("Naber kanka?"):
+if prompt := st.chat_input("Mesajını yaz kanka..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
     
-    with st.spinner("ÖmerGPT (OpenRouter) yanıtlıyor..."):
+    with st.spinner("ÖmerGPT (OpenRouter) bağlanıyor..."):
         cevap = model_yanit_al(prompt, context_text)
         with st.chat_message("assistant"): st.markdown(cevap)
         st.session_state.messages.append({"role": "assistant", "content": cevap})
