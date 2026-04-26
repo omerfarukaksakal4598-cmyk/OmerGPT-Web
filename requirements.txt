@@ -1,5 +1,2 @@
 streamlit
-google-generativeai
-Pillow
-pypdf
-docx2txt
+groq
