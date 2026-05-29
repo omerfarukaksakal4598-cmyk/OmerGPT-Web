@@ -9,16 +9,25 @@ from contextlib import redirect_stdout
 st.set_page_config(page_title="ÖmerGPT Pro", layout="wide")
 st.title("ÖmerGPT Pro - Kişisel Asistan")
 
-# --- 1. API Kontrolü ve Ayarları ---
+# --- 1. API Ayarları ve Akıllı Model Seçimi ---
 if "GOOGLE_API_KEY" not in st.secrets:
-    st.error("HATA: Streamlit Secrets içinde 'GOOGLE_API_KEY' bulunamadı! Lütfen ayarları kontrol edin.")
+    st.error("HATA: Streamlit Secrets içinde 'GOOGLE_API_KEY' bulunamadı.")
     st.stop()
 
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     
-    # Model seçimi (En kararlı olanı seç)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # Sistemin desteklediği modellerden sohbet yeteneği olanı bul
+    def get_best_model():
+        models = [m for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        if not models:
+            raise Exception("Kullanılabilecek model bulunamadı.")
+        # İlk uygun modeli döndür
+        return genai.GenerativeModel(models[0].name)
+
+    model = get_best_model()
+    st.sidebar.success(f"Aktif Model: {model._model_name}")
+
 except Exception as e:
     st.error(f"API Bağlantı Hatası: {e}")
     st.stop()
@@ -48,20 +57,15 @@ with tab1:
                     content = uploaded_file.read().decode('utf-8')
                     full_prompt = f"Dosya içeriği: {content} \n Soru: {prompt}"
                 
-                # Kota hatasına karşı kısa bir gecikme
-                time.sleep(1) 
                 response = model.generate_content(full_prompt)
                 st.markdown(response.text)
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
             except Exception as e:
-                if "429" in str(e):
-                    st.error("Kota aşıldı! Lütfen 1 dakika bekleyin veya yeni bir API anahtarı alın.")
-                else:
-                    st.error(f"Hata: {e}")
+                st.error(f"Yanıt alınamadı: {e}")
 
 with tab2:
     st.subheader("Python Kod Çalıştırıcı")
-    code = st.text_area("Python kodunuzu buraya yazın:", "print('ÖmerGPT ile test')", height=200, key="code_tab2")
+    code = st.text_area("Kod yazın:", "print('ÖmerGPT ile deneme')", height=200, key="code_tab2")
     if st.button("Kodu Çalıştır", key="btn_tab2"):
         f = io.StringIO()
         try:
