@@ -1,38 +1,37 @@
 import streamlit as st
 import google.generativeai as genai
 
-# Streamlit secrets içinden anahtarı çeker
-# Not: Streamlit Cloud -> Settings -> Secrets kısmına 
-# GOOGLE_API_KEY = "AIza..." şeklinde eklemeyi unutma
+# Streamlit secrets içinden API anahtarını alıyoruz
 try:
     api_key = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
 except Exception:
-    st.error("API Anahtarı bulunamadı! Lütfen 'Settings > Secrets' kısmına GOOGLE_API_KEY ekleyin.")
+    st.error("⚠️ Hata: API Anahtarı bulunamadı! Lütfen 'Settings > Secrets' kısmına GOOGLE_API_KEY ekleyin.")
     st.stop()
 
-# Gemini modelini ayarla (Flash modeli en hızlı ve en verimli olanıdır)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# Model ayarları (En kararlı ve hızlı çalışan sürüm)
+# gemini-pro veya gemini-1.5-flash modellerinden birini kullanabilirsin.
+model = genai.GenerativeModel('gemini-pro')
 
 st.set_page_config(page_title="ÖmerGPT", layout="centered")
-st.title("ÖmerGPT Sohbet")
+st.title("ÖmerGPT Sohbet Paneli")
 
-# Sohbet geçmişini sakla
+# Sohbet geçmişini tutan yapı
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Geçmiş mesajları ekrana yazdır
+# Mesajları ekrana yansıt
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Kullanıcıdan girdi al
-if prompt := st.chat_input("Mesajınızı yazın..."):
+# Kullanıcı girişi
+if prompt := st.chat_input("Mesajını yaz..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # AI Yanıtı
+    # Gemini Yanıtı
     with st.chat_message("assistant"):
         try:
             response = model.generate_content(prompt)
@@ -40,4 +39,4 @@ if prompt := st.chat_input("Mesajınızı yazın..."):
             st.markdown(full_response)
             st.session_state.messages.append({"role": "assistant", "content": full_response})
         except Exception as e:
-            st.error(f"Bir hata oluştu: {e}")
+            st.error(f"Sistem Hatası: {e}")
