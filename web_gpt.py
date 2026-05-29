@@ -1,42 +1,44 @@
 import streamlit as st
 import google.generativeai as genai
 
-# Streamlit secrets içinden API anahtarını alıyoruz
+# 1. API Anahtarını al
 try:
     api_key = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
 except Exception:
-    st.error("⚠️ Hata: API Anahtarı bulunamadı! Lütfen 'Settings > Secrets' kısmına GOOGLE_API_KEY ekleyin.")
+    st.error("API Anahtarı bulunamadı! Lütfen Secrets kısmına GOOGLE_API_KEY ekleyin.")
     st.stop()
 
-# Model ayarları (En kararlı ve hızlı çalışan sürüm)
-# gemini-pro veya gemini-1.5-flash modellerinden birini kullanabilirsin.
-model = genai.GenerativeModel('gemini-pro')
+# 2. HATA ÖNLEYİCİ: Kullanılabilir modelleri otomatik bul
+def get_best_model():
+    # Mevcut tüm modelleri listele ve 'gemini' ile başlayan en uygun olanı seç
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods and 'gemini' in m.name:
+            return m.name
+    return 'gemini-1.5-flash' # Bulamazsa varsayılanı dene
+
+model_name = get_best_model()
+model = genai.GenerativeModel(model_name)
 
 st.set_page_config(page_title="ÖmerGPT", layout="centered")
-st.title("ÖmerGPT Sohbet Paneli")
+st.title(f"ÖmerGPT ({model_name} ile çalışıyor)")
 
-# Sohbet geçmişini tutan yapı
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Mesajları ekrana yansıt
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Kullanıcı girişi
-if prompt := st.chat_input("Mesajını yaz..."):
+if prompt := st.chat_input("Mesajınızı yazın..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Gemini Yanıtı
     with st.chat_message("assistant"):
         try:
             response = model.generate_content(prompt)
-            full_response = response.text
-            st.markdown(full_response)
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
+            st.markdown(response.text)
+            st.session_state.messages.append({"role": "assistant", "content": response.text})
         except Exception as e:
             st.error(f"Sistem Hatası: {e}")
