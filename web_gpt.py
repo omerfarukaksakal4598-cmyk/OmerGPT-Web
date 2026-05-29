@@ -4,22 +4,31 @@ import io
 import sys
 from contextlib import redirect_stdout
 
-# 1. API Ayarları ve Otomatik Model Bulucu
+# 1. API Ayarları ve Akıllı Model Geçişi
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     
-    # Hesapta çalışan en uygun modeli otomatik keşfet
-    def get_model():
-        models = [m for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Önce 1.5 Flash, yoksa herhangi bir Gemini modelini seç
-        for m in models:
-            if 'gemini-1.5-flash' in m.name:
-                return genai.GenerativeModel(m.name)
-        return genai.GenerativeModel(models[0].name)
+    # Sırasıyla denenecek modeller (Biri dolarsa diğerine geçer)
+    model_listesi = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
+    model = None
 
-    model = get_model()
+    for model_name in model_listesi:
+        try:
+            m = genai.GenerativeModel(model_name)
+            # Modeli test et
+            m.generate_content("test")
+            model = m
+            st.sidebar.success(f"Aktif Model: {model_name}")
+            break
+        except Exception:
+            continue
+
+    if model is None:
+        st.error("Tüm modellerin kotası dolu! Lütfen Google AI Studio'dan yeni bir API anahtarı alın.")
+        st.stop()
+
 except Exception as e:
-    st.error(f"API Bağlantı Hatası: {e}")
+    st.error(f"Sistem Hatası: {e}")
     st.stop()
 
 st.set_page_config(page_title="ÖmerGPT Pro", layout="wide")
@@ -29,7 +38,6 @@ st.title("ÖmerGPT Pro - Kişisel Asistan")
 if "messages" not in st.session_state: st.session_state.messages = []
 if "todo" not in st.session_state: st.session_state.todo = []
 
-# Sekmeler
 tab1, tab2, tab3 = st.tabs(["Sohbet & Analiz", "Kod Çalıştırıcı", "Görev Yöneticisi"])
 
 with tab1:
@@ -44,15 +52,12 @@ with tab1:
         with st.chat_message("user"): st.markdown(prompt)
         
         with st.chat_message("assistant"):
-            full_prompt = prompt
-            if uploaded_file:
-                try:
+            try:
+                full_prompt = prompt
+                if uploaded_file:
                     content = uploaded_file.read().decode('utf-8')
                     full_prompt = f"Dosya içeriği: {content} \n Soru: {prompt}"
-                except:
-                    full_prompt = f"Dosya okunamadı. Soru: {prompt}"
-            
-            try:
+                
                 response = model.generate_content(full_prompt)
                 st.markdown(response.text)
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
