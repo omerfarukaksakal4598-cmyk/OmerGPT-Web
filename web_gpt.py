@@ -4,19 +4,28 @@ import io
 import sys
 from contextlib import redirect_stdout
 
-# 1. API Ayarları
+# 1. API Ayarları ve Otomatik Model Bulucu
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    # 002 sürümü ile model güncellendi
-    model = genai.GenerativeModel('gemini-1.5-flash-002') 
+    
+    # Hesapta çalışan en uygun modeli otomatik keşfet
+    def get_model():
+        models = [m for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Önce 1.5 Flash, yoksa herhangi bir Gemini modelini seç
+        for m in models:
+            if 'gemini-1.5-flash' in m.name:
+                return genai.GenerativeModel(m.name)
+        return genai.GenerativeModel(models[0].name)
+
+    model = get_model()
 except Exception as e:
-    st.error(f"API Hatası: {e}")
+    st.error(f"API Bağlantı Hatası: {e}")
     st.stop()
 
 st.set_page_config(page_title="ÖmerGPT Pro", layout="wide")
 st.title("ÖmerGPT Pro - Kişisel Asistan")
 
-# Session State tanımlamaları
+# Session State
 if "messages" not in st.session_state: st.session_state.messages = []
 if "todo" not in st.session_state: st.session_state.todo = []
 
@@ -24,7 +33,6 @@ if "todo" not in st.session_state: st.session_state.todo = []
 tab1, tab2, tab3 = st.tabs(["Sohbet & Analiz", "Kod Çalıştırıcı", "Görev Yöneticisi"])
 
 with tab1:
-    # Benzersiz key ile dosya yükleyici
     uploaded_file = st.file_uploader("Dosya Analizi için PDF/Metin yükle", type=['pdf', 'txt'], key="file_tab1")
     
     for message in st.session_state.messages:
@@ -54,7 +62,6 @@ with tab1:
 with tab2:
     st.subheader("Python Kod Çalıştırıcı")
     code = st.text_area("Buraya kod yazın:", "print('ÖmerGPT ile kod denemesi')", height=200, key="code_tab2")
-    
     if st.button("Kodu Çalıştır", key="btn_tab2"):
         f = io.StringIO()
         try:
