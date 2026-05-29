@@ -9,13 +9,13 @@ try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"API Ayarlarında hata: {e}")
+    st.error(f"API Hatası: {e}")
     st.stop()
 
 st.set_page_config(page_title="ÖmerGPT Pro", layout="wide")
 st.title("ÖmerGPT Pro - Kişisel Asistan")
 
-# Session State tanımlamaları
+# Session State
 if "messages" not in st.session_state: st.session_state.messages = []
 if "todo" not in st.session_state: st.session_state.todo = []
 
@@ -23,8 +23,8 @@ if "todo" not in st.session_state: st.session_state.todo = []
 tab1, tab2, tab3 = st.tabs(["Sohbet & Analiz", "Kod Çalıştırıcı", "Görev Yöneticisi"])
 
 with tab1:
-    # Dosya Yükleyici (key eklendi, hata giderildi)
-    uploaded_file = st.file_uploader("Dosya Analizi için PDF/Metin yükle", type=['pdf', 'txt'], key="yukleyici_1")
+    # Key değerini benzersiz ve uzun tuttuk
+    uploaded_file = st.file_uploader("Dosya Analizi için PDF/Metin yükle", type=['pdf', 'txt'], key="unique_file_uploader_tab1")
     
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -46,9 +46,10 @@ with tab1:
 
 with tab2:
     st.subheader("Python Kod Çalıştırıcı")
-    code = st.text_area("Buraya kod yazın:", "print('ÖmerGPT ile kod denemesi')", height=200)
+    # Kod alanına da key verdik ki çakışma olmasın
+    code = st.text_area("Buraya kod yazın:", "print('ÖmerGPT ile kod denemesi')", height=200, key="code_input_area")
     
-    if st.button("Kodu Çalıştır"):
+    if st.button("Kodu Çalıştır", key="run_code_button"):
         f = io.StringIO()
         try:
             with redirect_stdout(f):
@@ -56,12 +57,12 @@ with tab2:
             st.success("Çıktı:")
             st.code(f.getvalue())
         except Exception as e:
-            st.error(f"Hata oluştu: {e}")
+            st.error(f"Kod Hatası: {e}")
 
 with tab3:
     st.subheader("Görev Yöneticisi")
-    gorev = st.text_input("Yapılacak bir iş ekle:")
-    if st.button("Ekle"):
+    gorev = st.text_input("Yapılacak bir iş ekle:", key="todo_input")
+    if st.button("Ekle", key="add_todo_button"):
         if gorev: st.session_state.todo.append(gorev)
     for i, item in enumerate(st.session_state.todo):
         st.write(f"✅ {i+1}. {item}")
