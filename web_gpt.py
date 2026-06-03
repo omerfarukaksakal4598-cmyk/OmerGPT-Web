@@ -8,7 +8,7 @@ import json
 import os
 from contextlib import redirect_stdout
 from gtts import gTTS
-from PIL import Image, ImageEnhance  # Parlaklık ayarı için ImageEnhance eklendi
+from PIL import Image, ImageEnhance
 
 # Sayfa Yapılandırması
 st.set_page_config(page_title="ÖmerGPT Pro", layout="wide")
@@ -57,7 +57,6 @@ if "app_theme" not in st.session_state:
 if "retry_prompt" not in st.session_state:
     st.session_state.retry_prompt = None
 
-# ÖNCELİKLE DOSYADAN VERİLERİ YÜKLEMEYİ DENE
 if "omer_sessions" not in st.session_state:
     if not load_chats_from_file():
         st.session_state.omer_sessions = {"sess_1": {"title": "Yeni Sohbet", "messages": []}} 
@@ -142,7 +141,6 @@ apply_theme(st.session_state.app_theme)
 
 st.title("ÖmerGPT Pro - Kişisel Asistan")
 
-# --- API Ayarları ve Akıllı Model Seçimi ---
 if "GOOGLE_API_KEY" not in st.secrets:
     st.error("HATA: Streamlit Secrets içinde 'GOOGLE_API_KEY' bulunamadı.")
     st.stop()
@@ -166,7 +164,7 @@ if not selected_model_name and st.session_state.model_list:
 
 system_prompt = None
 if st.session_state.ai_mode == "kod_yazici":
-    system_prompt = "Sen uzman bir bilgisayar mühendisi ve yazılımcısın. Kullanıcının isteklerine SADECE temiz, çalışır durumda ve kopyalanabilir kod blokları ile cevap ver. Gereksiz açıklamaları tamamen çıkar. Sadece kodu ve kod içi çok kısa yorum satırlarını yaz."
+    system_prompt = "Sen uzman bir bilgisayar mühendisi ve yazılımcısın. Kullanıcının isteklerine SADECE temiz, çalışır durumda ve kopyalanabilir kod blokları ile cevap ver. Gereksiz açıklamaları tamamen çıkar."
 
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel(selected_model_name, system_instruction=system_prompt)
@@ -177,7 +175,7 @@ active_chat = active_session["messages"]
 trigger_prompt = None
 bt = "`" * 3 
 
-# --- SİDEBAR: Sol Men Menü Tasarımı ---
+# --- SİDEBAR ---
 with st.sidebar:
     st.header("📜 Sohbet Geçmişi")
     
@@ -196,12 +194,9 @@ with st.sidebar:
     
     for sess_id, sess_data in reversed(list(st.session_state.omer_sessions.items())):
         baslik = sess_data["title"]
-        
         if search_query and search_query.lower() not in baslik.lower():
             continue
-            
         buton_yazisi = f"🟢 {baslik}" if sess_id == st.session_state.current_session else f"💬 {baslik}"
-            
         if st.button(buton_yazisi, key=f"btn_{sess_id}", use_container_width=True):
             st.session_state.current_session = sess_id
             save_chats_to_file()
@@ -254,7 +249,12 @@ with st.sidebar:
 
     st.write("---")
 
-    # Favori Kod Deposu
+    # --- YENİ: 1. İnternet Arama Anahtarı ---
+    st.subheader("🌐 Canlı Ağ Bağlantısı")
+    use_web_search = st.checkbox("Canlı İnternet Aramasını Aktif Et", value=False, help="Güncel haberler, yeni güncellemeler veya dosya aramaları için Google'ı kullanır.")
+
+    st.write("---")
+
     st.subheader("💾 Favori Kod Deposu")
     with st.expander("➕ Yeni Kod Parçası Ekle"):
         snip_title = st.text_input("Kod Başlığı:", key="new_snip_title")
@@ -277,22 +277,14 @@ with st.sidebar:
 
     st.write("---")
     
-    # İndirme ve Silme Araçları
     if len(active_chat) > 0:
         chat_download_text = ""
         for message in active_chat:
             sender = "Ömer Faruk" if message["role"] == "user" else "ÖmerGPT"
             chat_download_text += f"[{sender}]: {message['content']}\n\n"
             
-        st.download_button(
-            label="💾 Bu Sohbeti İndir",
-            data=chat_download_text,
-            file_name=f"{active_session['title']}.txt",
-            mime="text/plain",
-            use_container_width=True
-        )
-        
-        if st.button("🗑️ Bu Sohbeti Sil", use_container_width=True):
+        st.download_button("💾 Sohbeti İndir", chat_download_text, f"{active_session['title']}.txt", "text/plain", use_container_width=True)
+        if st.button("🗑️ Sohbeti Sil", use_container_width=True):
             if len(st.session_state.omer_sessions) > 1:
                 del st.session_state.omer_sessions[st.session_state.current_session]
                 st.session_state.current_session = list(st.session_state.omer_sessions.keys())[0]
@@ -303,9 +295,8 @@ with st.sidebar:
             
         st.write("---")
     
-    # Kod Çalıştırıcı Butonu
     st.subheader("🐍 Python Araçları")
-    runner_btn_label = "🔽 Kod Çalıştırıcıyı Kapat" if st.session_state.show_code_runner else "▶️ Kod Çalıştırıcıyı Aç"
+    runner_btn_label = "🔽 Çalıştırıcı Kapat" if st.session_state.show_code_runner else "▶️ Çalıştırıcı Aç"
     
     if st.button(runner_btn_label, use_container_width=True):
         st.session_state.show_code_runner = not st.session_state.show_code_runner
@@ -323,33 +314,22 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Kod Hatası: {e}")
 
-    # Gelişmiş İstatistik Paneli
-    st.write("---")
-    total_msg = len(active_chat)
-    user_msg = len([m for m in active_chat if m["role"] == "user"])
-    assistant_msg = total_msg - user_msg
-    total_words = sum(len(m["content"].split()) for m in active_chat if m["role"] == "assistant")
-
-    st.caption("📊 **Sohbet İstatistikleri**")
-    st.caption(f"• Toplam Mesaj: {total_msg}")
-    st.caption(f"• Gönderilen Soru: {user_msg}")
-    st.caption(f"• Alınan Cevap: {assistant_msg}")
-    st.caption(f"• Üretilen Kelime: {total_words}")
-
 # =====================================================================
-# ANA SOHBET EKRANI (Geliştirilmiş Çoklu Ortam Girişi)
+# ANA EKRAN VE YENİ GİRİŞ SİSTEMLERİ
 # =====================================================================
 
-# Şık bir Sekme (Tab) yapısı oluşturarak ekranı düzenliyoruz
-tab_upload, tab_camera = st.tabs(["📁 Dosya / Fotoğraf Yükle", "📸 Canlı Kamera ile Çek"])
+# --- YENİ: 3. Link Analiz Sistemi Eklendi ---
+tab_upload, tab_camera, tab_link = st.tabs(["📁 Dosya/Resim Yükle", "📸 Canlı Kamera", "🔗 Web Linki Oku"])
 
 with tab_upload:
-    uploaded_file = st.file_uploader("Metin belgesi veya hazır resim seç:", type=['txt', 'png', 'jpg', 'jpeg'], key=f"file_{st.session_state.current_session}")
+    uploaded_file = st.file_uploader("Metin veya resim seç:", type=['txt', 'png', 'jpg', 'jpeg'], key=f"file_{st.session_state.current_session}")
 
 with tab_camera:
-    camera_file = st.camera_input("Soru sormak istediğin kodu veya ödevi kameraya göster:")
-    # --- KARANLIK ÖNLEME SİSTEMİ (Exposure Booster) ---
-    brightness_val = st.slider("☀️ Dijital Pozlama Gücü (Karanlık Ortam Ayarı)", 1.0, 3.0, 1.3, step=0.1, help="Fotoğraf karanlık çıkarsa bu değeri artırarak yapay zekanın resmi net görmesini sağlayabilirsin.")
+    camera_file = st.camera_input("Kameraya göster:")
+    brightness_val = st.slider("☀️ Karanlık Ortam Ayarı (Pozlama)", 1.0, 3.0, 1.3, step=0.1)
+
+with tab_link:
+    url_input = st.text_input("🔗 İnceletmek istediğin web sitesinin linkini buraya yapıştır:")
 
 model_etiketi = "pro+" if st.session_state.model_choice == "pro" else "pro"
 
@@ -359,20 +339,22 @@ for message in active_chat:
 
 st.write("") 
 
-# Hızlı Şablon Butonları
+# --- YENİ: 2. Minecraft Dedektifi Şablonu (4 Butonlu Düzen) ---
 st.write("🎯 **Hızlı Şablonlar:**")
-template_cols = st.columns(3)
+template_cols = st.columns(4)
 with template_cols[0]:
     if st.button("🐛 Hatayı Düzelt", use_container_width=True):
-        trigger_prompt = f"Aşağıdaki kod bloğunda yer alan hataları bulup düzeltebilir misin?\n{bt}python\n# Kodunu buraya yapıştır\n{bt}"
+        trigger_prompt = f"Aşağıdaki kodda yer alan hataları düzeltir misin?\n{bt}python\n# Kodu buraya yapıştır\n{bt}"
 with template_cols[1]:
-    if st.button("🐍 Yeni Python Projesi", use_container_width=True):
-        trigger_prompt = "CustomTkinter kütüphanesini kullanarak yapabileceğim eğlenceli ve kendimi geliştirebileceğim bir Python GUI proje fikri verir misin?"
+    if st.button("🐍 Python Projesi", use_container_width=True):
+        trigger_prompt = "CustomTkinter ile yapabileceğim eğlenceli bir Python GUI proje fikri verir misin?"
 with template_cols[2]:
-    if st.button("📝 Ödev Özeti Çıkar", use_container_width=True):
-        trigger_prompt = "İstediğim bir okul konusunu öğretmenlerimin yapay zeka olduğunu anlamayacağı, tamamen doğal ve 6. sınıf düzeyine uygun bir dille özetler misin?"
+    if st.button("📝 Ödev Özeti", use_container_width=True):
+        trigger_prompt = "Aşağıdaki konuyu, tamamen doğal ve 6. sınıf düzeyine uygun, anlaşılır bir dille özetler misin?"
+with template_cols[3]:
+    if st.button("🧱 MC Crash Çöz", use_container_width=True):
+        trigger_prompt = f"Aşağıdaki Minecraft 1.12.2 crash-report logunu inceleyip hangi modların çakıştığını (VanillaFix vb.) bulur musun? Çözümü anlayabileceğim basitlikte anlat:\n{bt}text\n# Logu buraya yapıştır\n{bt}"
 
-# --- Dinamik Kod Ayıklama Paneli ---
 if active_chat and active_chat[-1]["role"] == "assistant":
     st.write("---")
     last_msg_content = active_chat[-1]["content"]
@@ -399,13 +381,7 @@ if active_chat and active_chat[-1]["role"] == "assistant":
                 except Exception as e:
                     st.error(f"Seslendirme Hatası: {e}")
         with action_cols[1]:
-            st.download_button(
-                label="📥 Üretilen Kodu .py Olarak İndir",
-                data=extracted_code,
-                file_name="kod_projesi.py",
-                mime="text/x-python",
-                use_container_width=True
-            )
+            st.download_button("📥 Kodu .py Olarak İndir", extracted_code, "kod_projesi.py", "text/x-python", use_container_width=True)
     else:
         if st.button("🔊 Son Cevabı Seslendir", use_container_width=True):
             try:
@@ -438,17 +414,13 @@ if prompt or trigger_prompt or st.session_state.retry_prompt:
     
     try:
         payload = None
-        
-        # 1. Senaryo: Canlı Kamera Görüntüsü Varsa
+        # İçerik Birleştirici
         if camera_file:
             img = Image.open(camera_file)
-            # Işık Güçlendirme Sihirbazı Devreye Giriyor:
             if brightness_val != 1.0:
                 enhancer = ImageEnhance.Brightness(img)
                 img = enhancer.enhance(brightness_val)
             payload = [final_prompt, img]
-            
-        # 2. Senaryo: Normal Dosya Yüklenmişse
         elif uploaded_file:
             if uploaded_file.name.lower().endswith(('.png', '.jpg', '.jpeg')):
                 img = Image.open(uploaded_file)
@@ -457,11 +429,18 @@ if prompt or trigger_prompt or st.session_state.retry_prompt:
                 content = uploaded_file.read().decode('utf-8', errors='ignore')
                 full_prompt = f"Dosya içeriği: {content} \n\n Soru: {final_prompt}"
                 payload = full_prompt
-        # 3. Senaryo: Sadece Metin Gönderilmişse
+        elif url_input:
+            # Kullanıcı link girmişse sorunun içine web adresini göm
+            payload = f"Aşağıdaki linkte bulunan içeriği incele ve sorumu buna göre yanıtla: {url_input}\n\nSoru: {final_prompt}"
         else:
             payload = final_prompt
         
-        response = model.generate_content(payload)
+        # İnternet Araması Aktif mi?
+        kwargs = {}
+        if use_web_search:
+            kwargs["tools"] = "google_search_retrieval"
+            
+        response = model.generate_content(payload, **kwargs)
         active_chat.append({"role": "assistant", "content": response.text})
         save_chats_to_file() 
         
