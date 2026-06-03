@@ -73,7 +73,7 @@ with st.sidebar:
             
     st.write("---")
     
-    # İSTEDİĞİN GÜNCELLEME 1: Buton Şeklinde Yapay Zeka Modları
+    # Yapay Zeka Modları
     st.subheader("🤖 Yapay Zeka Modu")
     
     normal_label = "🟢 Normal Mod Aktif" if st.session_state.ai_mode == "normal" else "⚪ Normal Mod"
@@ -89,7 +89,7 @@ with st.sidebar:
         
     st.write("---")
     
-    # Sohbet İndirme Butonu (Eğer mesaj varsa görünür)
+    # --- YENİ ÖZELLİK: İndirme ve Silme Araçları ---
     if len(active_chat) > 0:
         chat_download_text = ""
         for message in active_chat:
@@ -103,9 +103,22 @@ with st.sidebar:
             mime="text/plain",
             use_container_width=True
         )
+        
+        # Sohbet Silme Butonu
+        if st.button("🗑️ Bu Sohbeti Sil", use_container_width=True):
+            if len(st.session_state.omer_sessions) > 1:
+                # Aktif olan odayı hafızadan tamamen sil
+                del st.session_state.omer_sessions[st.session_state.current_session]
+                # Kalan ilk odaya otomatik geçiş yap
+                st.session_state.current_session = list(st.session_state.omer_sessions.keys())[0]
+            else:
+                # Eğer tek oda varsa, odayı silmek yerine içeriğini sıfırla
+                st.session_state.omer_sessions[st.session_state.current_session] = {"title": "Yeni Sohbet", "messages": []}
+            st.rerun()
+            
         st.write("---")
     
-    # İSTEDİĞİN GÜNCELLEME 2: Buton Şeklinde Açılıp Kapanan Kod Çalıştırıcı
+    # Buton Şeklinde Açılıp Kapanan Kod Çalıştırıcı
     st.subheader("🐍 Python Araçları")
     runner_btn_label = "🔽 Kod Çalıştırıcıyı Kapat" if st.session_state.show_code_runner else "▶️ Kod Çalıştırıcıyı Aç"
     
