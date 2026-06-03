@@ -6,6 +6,8 @@ import re  # Kod bloklarını ayıklamak için gerekli kütüphane
 import time  # 1.5 saniye bekletme senaryosu için gerekli kütüphane
 import json  # Verileri kalıcı olarak kaydetmek için JSON kütüphanesi
 import os  # Dosya kontrolü için OS kütüphanesi
+from contextlib import redirect_stdout
+from gtts import gTTS
 
 # Sayfa Yapılandırması
 st.set_page_config(page_title="ÖmerGPT Pro", layout="wide")
@@ -34,8 +36,8 @@ def load_chats_from_file():
                 st.session_state.current_session = data.get("current_session", "sess_1")
                 st.session_state.snippets = data.get("snippets", [])
                 return True
-            except:
-                return False
+        except:
+            return False
     return False
 
 # --- HAFIZA KONTROLLERİNİ BAŞLATMA ---
