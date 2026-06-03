@@ -13,32 +13,42 @@ if "GOOGLE_API_KEY" not in st.secrets:
     st.error("HATA: Streamlit Secrets içinde 'GOOGLE_API_KEY' bulunamadı.")
     st.stop()
 
-if "model_name" not in st.session_state:
+# Tüm kullanılabilir modelleri tarama ve hafızaya alma
+if "model_list" not in st.session_state:
     try:
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        models = [m for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        if not models:
-            st.error("Kullanılabilecek model bulunamadı.")
-            st.stop()
-        st.session_state.model_name = models[0].name
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        st.session_state.model_list = models
     except Exception as e:
         st.error(f"API Bağlantı Hatası: {e}")
         st.stop()
 
-# --- BUTTON VE MOD KONTROLLERİ İÇİN HAFIZA BAŞLATMA ---
+# --- HAFIZA KONTROLLERİNİ BAŞLATMA ---
 if "ai_mode" not in st.session_state:
-    st.session_state.ai_mode = "normal"  # Varsayılan mod: Normal
+    st.session_state.ai_mode = "normal"  # Varsayılan mod
+
+if "model_choice" not in st.session_state:
+    st.session_state.model_choice = "flash"  # Varsayılan model: Flash (Hızlı)
 
 if "show_code_runner" not in st.session_state:
     st.session_state.show_code_runner = False  # Kod çalıştırıcı varsayılan olarak kapalı
 
-# Mod Seçimine Göre Yapay Zeka Talimatını Ayarlama
+# Seçilen modele göre gerçek model adını eşleştirme
+selected_model_name = None
+for m in st.session_state.model_list:
+    if st.session_state.model_choice in m.lower():
+        selected_model_name = m
+        break
+if not selected_model_name and st.session_state.model_list:
+    selected_model_name = st.session_state.model_list[0]
+
+# Mod Seçimine Göre Yapay Zeka Talimatını (System Prompt) Dinamik Ayarlama
 system_prompt = None
 if st.session_state.ai_mode == "kod_yazici":
-    system_prompt = "Sen uzman bir bilgisayar mühendisi ve yazılımcısın. Kullanıcının isteklerine SADECE temiz, çalışır durumda ve kopyalanabilir kod blokları ile cevap ver. Gereksiz açıklamaları, giriş ve sonuç cümlelerini tamamen çıkar. Sadece kodu ve kod içi çok kısa yorum satırlarını yaz."
+    system_prompt = "Sen uzman bir bilgisayar mühendisi ve yazılımcısın. Kullanıcının isteklerine SADECE temiz, çalışır durumda ve kopyalanabilir kod blokları ile cevap ver. Gereksiz açıklamaları tamamen çıkar. Sadece kodu ve kod içi çok kısa yorum satırlarını yaz."
 
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-model = genai.GenerativeModel(st.session_state.model_name, system_instruction=system_prompt)
+model = genai.GenerativeModel(selected_model_name, system_instruction=system_prompt)
 
 # --- 2. GELİŞMİŞ SOHBET HAFIZASI ---
 if "omer_sessions" not in st.session_state:
@@ -48,6 +58,9 @@ if "omer_sessions" not in st.session_state:
 
 active_session = st.session_state.omer_sessions[st.session_state.current_session]
 active_chat = active_session["messages"]
+
+# Tetiklenecek hazır şablon sorusu için kontrol değişkeni
+trigger_prompt = None
 
 # --- SİDEBAR: Sol Menü Tasarımı ---
 with st.sidebar:
@@ -73,7 +86,7 @@ with st.sidebar:
             
     st.write("---")
     
-    # Yapay Zeka Modları
+    # Sadece İstediğin 2 Mod: Normal ve Kod Yazıcı
     st.subheader("🤖 Yapay Zeka Modu")
     
     normal_label = "🟢 Normal Mod Aktif" if st.session_state.ai_mode == "normal" else "⚪ Normal Mod"
@@ -88,8 +101,23 @@ with st.sidebar:
         st.rerun()
         
     st.write("---")
+
+    # ÖZELLİK 2: Manuel Model Seçici (Hızlı vs Güçlü)
+    st.subheader("⚡ Model Seçici")
+    flash_btn_label = "🚀 Gemini Flash Aktif" if st.session_state.model_choice == "flash" else "⚡ Gemini Flash (Hızlı)"
+    pro_btn_label = "🧠 Gemini Pro Aktif" if st.session_state.model_choice == "pro" else "💪 Gemini Pro (Güçlü)"
+
+    if st.button(flash_btn_label, use_container_width=True):
+        st.session_state.model_choice = "flash"
+        st.rerun()
+
+    if st.button(pro_btn_label, use_container_width=True):
+        st.session_state.model_choice = "pro"
+        st.rerun()
+
+    st.write("---")
     
-    # --- YENİ ÖZELLİK: İndirme ve Silme Araçları ---
+    # İndirme ve Silme Araçları
     if len(active_chat) > 0:
         chat_download_text = ""
         for message in active_chat:
@@ -104,15 +132,11 @@ with st.sidebar:
             use_container_width=True
         )
         
-        # Sohbet Silme Butonu
         if st.button("🗑️ Bu Sohbeti Sil", use_container_width=True):
             if len(st.session_state.omer_sessions) > 1:
-                # Aktif olan odayı hafızadan tamamen sil
                 del st.session_state.omer_sessions[st.session_state.current_session]
-                # Kalan ilk odaya otomatik geçiş yap
                 st.session_state.current_session = list(st.session_state.omer_sessions.keys())[0]
             else:
-                # Eğer tek oda varsa, odayı silmek yerine içeriğini sıfırla
                 st.session_state.omer_sessions[st.session_state.current_session] = {"title": "Yeni Sohbet", "messages": []}
             st.rerun()
             
@@ -138,6 +162,19 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Kod Hatası: {e}")
 
+    # ÖZELLİK 4: En Altta Küçük Yazılarla Sohbet İstatistikleri Paneli
+    st.write("---")
+    total_msg = len(active_chat)
+    user_msg = len([m for m in active_chat if m["role"] == "user"])
+    assistant_msg = total_msg - user_msg
+    total_words = sum(len(m["content"].split()) for m in active_chat if m["role"] == "assistant")
+
+    st.caption("📊 **Sohbet İstatistikleri**")
+    st.caption(f"• Toplam Mesaj: {total_msg}")
+    st.caption(f"• Gönderilen Soru: {user_msg}")
+    st.caption(f"• Alınan Cevap: {assistant_msg}")
+    st.caption(f"• Üretilen Kelime: {total_words}")
+
 # =====================================================================
 # ANA SOHBET EKRANI
 # =====================================================================
@@ -146,13 +183,7 @@ with st.sidebar:
 uploaded_file = st.file_uploader("Dosya Analizi için PDF/Metin yükle", type=['pdf', 'txt'], key=f"file_{st.session_state.current_session}")
 
 # Model Güç Etiketleri Ayarı
-m_name = st.session_state.model_name.lower()
-if "1.5-pro" in m_name or "2.5-pro" in m_name:
-    model_etiketi = "pro+"
-elif "flash" in m_name:
-    model_etiketi = "pro"
-else:
-    model_etiketi = "poer"
+model_etiketi = "pro+" if st.session_state.model_choice == "pro" else "pro"
 
 # Mesaj Geçmişini Göster
 for message in active_chat:
@@ -161,23 +192,41 @@ for message in active_chat:
 
 st.write("") # Alt boşluk
 
+# ÖZELLİK 3: Hızlı Şablon Butonları (Tıklayınca Direkt Soru Sorar)
+st.write("🎯 **Hızlı Şablonlar:**")
+template_cols = st.columns(3)
+with template_cols[0]:
+    if st.button("🐛 Hatayı Düzelt", use_container_width=True):
+        trigger_prompt = "Aşağıdaki kod bloğunda yer alan hataları bulup düzeltebilir miisin?\n```python\n# Kodunu buraya yapıştır\n```"
+with template_cols[1]:
+    if st.button("🐍 Yeni Python Projesi", use_container_width=True):
+        trigger_prompt = "CustomTkinter kütüphanesini kullanarak yapabileceğim eğlenceli ve kendimi geliştirebileceğim bir Python GUI proje fikri verir misin?"
+with template_cols[2]:
+    if st.button("📝 Ödev Özeti Çıkar", use_container_width=True):
+        trigger_prompt = "İstediğim bir okul konusunu öğretmenlerimin yapay zeka olduğunu anlamayacağı, tamamen doğal ve 6. sınıf düzeyine uygun bir dille özetler misin?"
+
 # Mod ve Model bilgisi chat_input kutusunun içinde dinamik birleşiyor
-aktif_mod_tr = "Normal" if st.session_state.ai_mode == "normal" else "Kod Yazıcı"
+mod_isimleri = {"normal": "Normal", "kod_yazici": "Kod Yazıcı"}
+aktif_mod_tr = mod_isimleri.get(st.session_state.ai_mode, "Normal")
 giris_metni = f"Bir şeyler yaz... [Mod: {aktif_mod_tr}] [Model: {model_etiketi}]"
 
-if prompt := st.chat_input(giris_metni, key="chat_input"):
+prompt = st.chat_input(giris_metni, key="chat_input")
+
+# Tetikleyicilerden biri çalışırsa işlemi başlat
+if prompt or trigger_prompt:
+    final_prompt = prompt if prompt else trigger_prompt
     
     if len(active_chat) == 0:
-        yeni_baslik = prompt if len(prompt) <= 25 else prompt[:25] + "..."
+        yeni_baslik = final_prompt if len(final_prompt) <= 25 else final_prompt[:25] + "..."
         active_session["title"] = yeni_baslik
 
-    active_chat.append({"role": "user", "content": prompt})
+    active_chat.append({"role": "user", "content": final_prompt})
     
     try:
-        full_prompt = prompt
+        full_prompt = final_prompt
         if uploaded_file:
             content = uploaded_file.read().decode('utf-8')
-            full_prompt = f"Dosya içeriği: {content} \n Soru: {prompt}"
+            full_prompt = f"Dosya içeriği: {content} \n Soru: {final_prompt}"
         
         response = model.generate_content(full_prompt)
         active_chat.append({"role": "assistant", "content": response.text})
