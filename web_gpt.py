@@ -3,17 +3,89 @@ import google.generativeai as genai
 import io
 import sys
 from contextlib import redirect_stdout
+from gtts import gTTS  # Seslendirme için gerekli kütüphane
 
 # Sayfa Yapılandırması
 st.set_page_config(page_title="ÖmerGPT Pro", layout="wide")
+
+# --- HAFIZA KONTROLLERİNİ BAŞLATMA ---
+if "ai_mode" not in st.session_state:
+    st.session_state.ai_mode = "normal"
+
+if "model_choice" not in st.session_state:
+    st.session_state.model_choice = "flash"
+
+if "show_code_runner" not in st.session_state:
+    st.session_state.show_code_runner = False
+
+if "snippets" not in st.session_state:
+    st.session_state.snippets = []  # Kod deposu hafızası
+
+if "app_theme" not in st.session_state:
+    st.session_state.app_theme = "varsayilan"  # Tema hafızası
+
+# --- ÖZELLİK 2: Tema Enjeksiyon Sistemi (CSS) ---
+def apply_theme(theme_name):
+    if theme_name == "matrix":
+        st.markdown("""
+            <style>
+            [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .stApp {
+                background-color: #000000 !important;
+            }
+            h1, h2, h3, p, span, label, .stMarkdown, div {
+                color: #00FF00 !important;
+                font-family: 'Courier New', Courier, monospace !important;
+            }
+            .stButton>button {
+                background-color: #001100 !important;
+                color: #00FF00 !important;
+                border: 1px solid #00FF00 !important;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+    elif theme_name == "cyberpunk":
+        st.markdown("""
+            <style>
+            [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .stApp {
+                background-color: #120421 !important;
+            }
+            h1, h2, h3, p, span, label, .stMarkdown, div {
+                color: #00ffff !important;
+            }
+            .stButton>button {
+                background-color: #25093a !important;
+                color: #ff007f !important;
+                border: 1px solid #ff007f !important;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+    elif theme_name == "vscode":
+        st.markdown("""
+            <style>
+            [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .stApp {
+                background-color: #1e1e1e !important;
+            }
+            h1, h2, h3, p, span, label, .stMarkdown, div {
+                color: #d4d4d4 !important;
+            }
+            .stButton>button {
+                background-color: #2d2d2d !important;
+                color: #3b82f6 !important;
+                border: 1px solid #3e3e3e !important;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+# Seçili temayı ekrana uygula
+apply_theme(st.session_state.app_theme)
+
 st.title("ÖmerGPT Pro - Kişisel Asistan")
 
-# --- 1. API Ayarları ve Akıllı Model Seçimi ---
+# --- API Ayarları ve Akıllı Model Seçimi ---
 if "GOOGLE_API_KEY" not in st.secrets:
     st.error("HATA: Streamlit Secrets içinde 'GOOGLE_API_KEY' bulunamadı.")
     st.stop()
 
-# Tüm kullanılabilir modelleri tarama ve hafızaya alma
 if "model_list" not in st.session_state:
     try:
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
@@ -23,17 +95,6 @@ if "model_list" not in st.session_state:
         st.error(f"API Bağlantı Hatası: {e}")
         st.stop()
 
-# --- HAFIZA KONTROLLERİNİ BAŞLATMA ---
-if "ai_mode" not in st.session_state:
-    st.session_state.ai_mode = "normal"  # Varsayılan mod
-
-if "model_choice" not in st.session_state:
-    st.session_state.model_choice = "flash"  # Varsayılan model: Flash (Hızlı)
-
-if "show_code_runner" not in st.session_state:
-    st.session_state.show_code_runner = False  # Kod çalıştırıcı varsayılan olarak kapalı
-
-# Seçilen modele göre gerçek model adını eşleştirme
 selected_model_name = None
 for m in st.session_state.model_list:
     if st.session_state.model_choice in m.lower():
@@ -42,7 +103,6 @@ for m in st.session_state.model_list:
 if not selected_model_name and st.session_state.model_list:
     selected_model_name = st.session_state.model_list[0]
 
-# Mod Seçimine Göre Yapay Zeka Talimatını (System Prompt) Dinamik Ayarlama
 system_prompt = None
 if st.session_state.ai_mode == "kod_yazici":
     system_prompt = "Sen uzman bir bilgisayar mühendisi ve yazılımcısın. Kullanıcının isteklerine SADECE temiz, çalışır durumda ve kopyalanabilir kod blokları ile cevap ver. Gereksiz açıklamaları tamamen çıkar. Sadece kodu ve kod içi çok kısa yorum satırlarını yaz."
@@ -50,7 +110,7 @@ if st.session_state.ai_mode == "kod_yazici":
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel(selected_model_name, system_instruction=system_prompt)
 
-# --- 2. GELİŞMİŞ SOHBET HAFIZASI ---
+# --- SOHBET HAFIZASI ---
 if "omer_sessions" not in st.session_state:
     st.session_state.omer_sessions = {"sess_1": {"title": "Yeni Sohbet", "messages": []}} 
     st.session_state.current_session = "sess_1" 
@@ -59,7 +119,6 @@ if "omer_sessions" not in st.session_state:
 active_session = st.session_state.omer_sessions[st.session_state.current_session]
 active_chat = active_session["messages"]
 
-# Tetiklenecek hazır şablon sorusu için kontrol değişkeni
 trigger_prompt = None
 
 # --- SİDEBAR: Sol Menü Tasarımı ---
@@ -86,23 +145,19 @@ with st.sidebar:
             
     st.write("---")
     
-    # Sadece İstediğin 2 Mod: Normal ve Kod Yazıcı
     st.subheader("🤖 Yapay Zeka Modu")
-    
     normal_label = "🟢 Normal Mod Aktif" if st.session_state.ai_mode == "normal" else "⚪ Normal Mod"
     kod_yazici_label = "🟢 Kod Yazıcı Aktif" if st.session_state.ai_mode == "kod_yazici" else "💻 Kod Yazıcı Modu"
     
     if st.button(normal_label, use_container_width=True):
         st.session_state.ai_mode = "normal"
         st.rerun()
-        
     if st.button(kod_yazici_label, use_container_width=True):
         st.session_state.ai_mode = "kod_yazici"
         st.rerun()
         
     st.write("---")
 
-    # ÖZELLİK 2: Manuel Model Seçici (Hızlı vs Güçlü)
     st.subheader("⚡ Model Seçici")
     flash_btn_label = "🚀 Gemini Flash Aktif" if st.session_state.model_choice == "flash" else "⚡ Gemini Flash (Hızlı)"
     pro_btn_label = "🧠 Gemini Pro Aktif" if st.session_state.model_choice == "pro" else "💪 Gemini Pro (Güçlü)"
@@ -110,10 +165,50 @@ with st.sidebar:
     if st.button(flash_btn_label, use_container_width=True):
         st.session_state.model_choice = "flash"
         st.rerun()
-
     if st.button(pro_btn_label, use_container_width=True):
         st.session_state.model_choice = "pro"
         st.rerun()
+
+    st.write("---")
+
+    # ÖZELLİK 2: Tema Seçim Butonları
+    st.subheader("🎨 Arayüz Teması")
+    t_cols = st.columns(2)
+    with t_cols[0]:
+        if st.button("⚪ Standart", use_container_width=True):
+            st.session_state.app_theme = "varsayilan"
+            st.rerun()
+        if st.button("🟣 Siberpunk", use_container_width=True):
+            st.session_state.app_theme = "cyberpunk"
+            st.rerun()
+    with t_cols[1]:
+        if st.button("🟢 Matrix", use_container_width=True):
+            st.session_state.app_theme = "matrix"
+            st.rerun()
+        if st.button("🔵 VS Code", use_container_width=True):
+            st.session_state.app_theme = "vscode"
+            st.rerun()
+
+    st.write("---")
+
+    # ÖZELLİK 1: Favori Kod Deposu (Snippet Library)
+    st.subheader("💾 Favori Kod Deposu")
+    with st.expander("➕ Yeni Kod Parçası Ekle"):
+        snip_title = st.text_input("Kod Başlığı:", key="new_snip_title")
+        snip_content = st.text_area("Kod Bloğu:", key="new_snip_code", height=100)
+        if st.button("Depoya Kaydet", use_container_width=True):
+            if snip_title and snip_content:
+                st.session_state.snippets.append({"title": snip_title, "code": snip_content})
+                st.success("Kod kaydedildi!")
+                st.rerun()
+
+    if st.session_state.snippets:
+        for idx, snip in enumerate(st.session_state.snippets):
+            with st.expander(f"📋 {snip['title']}"):
+                st.code(snip['code'], language="python")
+                if st.button("🗑️ Sil", key=f"del_snip_{idx}", use_container_width=True):
+                    st.session_state.snippets.pop(idx)
+                    st.rerun()
 
     st.write("---")
     
@@ -142,7 +237,7 @@ with st.sidebar:
             
         st.write("---")
     
-    # Buton Şeklinde Açılıp Kapanan Kod Çalıştırıcı
+    # Kod Çalıştırıcı Butonu
     st.subheader("🐍 Python Araçları")
     runner_btn_label = "🔽 Kod Çalıştırıcıyı Kapat" if st.session_state.show_code_runner else "▶️ Kod Çalıştırıcıyı Aç"
     
@@ -162,7 +257,7 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Kod Hatası: {e}")
 
-    # ÖZELLİK 4: En Altta Küçük Yazılarla Sohbet İstatistikleri Paneli
+    # ÖZELLİK 4: Küçük Yazılarla İstatistik Paneli
     st.write("---")
     total_msg = len(active_chat)
     user_msg = len([m for m in active_chat if m["role"] == "user"])
@@ -179,25 +274,22 @@ with st.sidebar:
 # ANA SOHBET EKRANI
 # =====================================================================
 
-# Dosya Yükleyici
 uploaded_file = st.file_uploader("Dosya Analizi için PDF/Metin yükle", type=['pdf', 'txt'], key=f"file_{st.session_state.current_session}")
 
-# Model Güç Etiketleri Ayarı
 model_etiketi = "pro+" if st.session_state.model_choice == "pro" else "pro"
 
-# Mesaj Geçmişini Göster
 for message in active_chat:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-st.write("") # Alt boşluk
+st.write("") 
 
-# ÖZELLİK 3: Hızlı Şablon Butonları (Tıklayınca Direkt Soru Sorar)
+# ÖZELLİK 3: Hızlı Şablon Butonları
 st.write("🎯 **Hızlı Şablonlar:**")
 template_cols = st.columns(3)
 with template_cols[0]:
     if st.button("🐛 Hatayı Düzelt", use_container_width=True):
-        trigger_prompt = "Aşağıdaki kod bloğunda yer alan hataları bulup düzeltebilir miisin?\n```python\n# Kodunu buraya yapıştır\n```"
+        trigger_prompt = "Aşağıdaki kod bloğunda yer alan hataları bulup düzeltebilir misin?\n```python\n# Kodunu buraya yapıştır\n```"
 with template_cols[1]:
     if st.button("🐍 Yeni Python Projesi", use_container_width=True):
         trigger_prompt = "CustomTkinter kütüphanesini kullanarak yapabileceğim eğlenceli ve kendimi geliştirebileceğim bir Python GUI proje fikri verir misin?"
@@ -205,14 +297,26 @@ with template_cols[2]:
     if st.button("📝 Ödev Özeti Çıkar", use_container_width=True):
         trigger_prompt = "İstediğim bir okul konusunu öğretmenlerimin yapay zeka olduğunu anlamayacağı, tamamen doğal ve 6. sınıf düzeyine uygun bir dille özetler misin?"
 
-# Mod ve Model bilgisi chat_input kutusunun içinde dinamik birleşiyor
+# ÖZELLİK 3 (TTS): Seslendirme Butonu Yerleşimi (Eğer en son mesaj asistan tarafından geldiyse aktif olur)
+if active_chat and active_chat[-1]["role"] == "assistant":
+    st.write("---")
+    if st.button("🔊 Son Cevabı Seslendir", use_container_width=True):
+        try:
+            clean_text_to_speak = active_chat[-1]["content"].replace("```python", "").replace("```", "")
+            tts = gTTS(text=clean_text_to_speak, lang='tr')
+            sound_buffer = io.BytesIO()
+            tts.write_to_fp(sound_buffer)
+            sound_buffer.seek(0)
+            st.audio(sound_buffer, format='audio/mp3', autoplay=True)
+        except Exception as e:
+            st.error(f"Seslendirme Hatası: {e}. Lütfen requirements.txt dosyanıza 'gTTS' eklediğinizden emin olun.")
+
 mod_isimleri = {"normal": "Normal", "kod_yazici": "Kod Yazıcı"}
 aktif_mod_tr = mod_isimleri.get(st.session_state.ai_mode, "Normal")
 giris_metni = f"Bir şeyler yaz... [Mod: {aktif_mod_tr}] [Model: {model_etiketi}]"
 
 prompt = st.chat_input(giris_metni, key="chat_input")
 
-# Tetikleyicilerden biri çalışırsa işlemi başlat
 if prompt or trigger_prompt:
     final_prompt = prompt if prompt else trigger_prompt
     
