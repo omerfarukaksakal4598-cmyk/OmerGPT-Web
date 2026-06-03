@@ -4,11 +4,39 @@ import io
 import sys
 import re  # Kod bloklarını ayıklamak için gerekli kütüphane
 import time  # 1.5 saniye bekletme senaryosu için gerekli kütüphane
-from contextlib import redirect_stdout
-from gtts import gTTS
+import json  # Verileri kalıcı olarak kaydetmek için JSON kütüphanesi
+import os  # Dosya kontrolü için OS kütüphanesi
 
 # Sayfa Yapılandırması
 st.set_page_config(page_title="ÖmerGPT Pro", layout="wide")
+
+# --- DOSYA TABANLI KALICI HAFIZA FONKSİYONLARI ---
+def save_chats_to_file():
+    try:
+        data = {
+            "omer_sessions": st.session_state.omer_sessions,
+            "session_counter": st.session_state.session_counter,
+            "current_session": st.session_state.current_session,
+            "snippets": st.session_state.snippets
+        }
+        with open("sohbet_gecmisi.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        pass
+
+def load_chats_from_file():
+    if os.path.exists("sohbet_gecmisi.json"):
+        try:
+            with open("sohbet_gecmisi.json", "r", encoding="utf-8") as f:
+                data = json.load(f)
+                st.session_state.omer_sessions = data.get("omer_sessions", {"sess_1": {"title": "Yeni Sohbet", "messages": []}})
+                st.session_state.session_counter = data.get("session_counter", 1)
+                st.session_state.current_session = data.get("current_session", "sess_1")
+                st.session_state.snippets = data.get("snippets", [])
+                return True
+            except:
+                return False
+    return False
 
 # --- HAFIZA KONTROLLERİNİ BAŞLATMA ---
 if "ai_mode" not in st.session_state:
@@ -20,15 +48,23 @@ if "model_choice" not in st.session_state:
 if "show_code_runner" not in st.session_state:
     st.session_state.show_code_runner = False
 
-if "snippets" not in st.session_state:
-    st.session_state.snippets = []
-
 if "app_theme" not in st.session_state:
     st.session_state.app_theme = "varsayilan"
 
-# Otomatik model geçişlerinde sorunun kaybolmaması için geçici hafıza kutusu
 if "retry_prompt" not in st.session_state:
     st.session_state.retry_prompt = None
+
+# ÖNCELİKLE DOSYADAN VERİLERİ YÜKLEMEYİ DENE
+if "omer_sessions" not in st.session_state:
+    if not load_chats_from_file():
+        # Eğer kayıtlı dosya yoksa varsayılan olarak sıfırdan başlat
+        st.session_state.omer_sessions = {"sess_1": {"title": "Yeni Sohbet", "messages": []}} 
+        st.session_state.current_session = "sess_1" 
+        st.session_state.session_counter = 1
+        st.session_state.snippets = []
+
+if "snippets" not in st.session_state:
+    st.session_state.snippets = []
 
 # --- Kusursuz Nokta Atışı Temalar ---
 def apply_theme(theme_name):
@@ -133,12 +169,6 @@ if st.session_state.ai_mode == "kod_yazici":
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel(selected_model_name, system_instruction=system_prompt)
 
-# --- SOHBET HAFIZASI ---
-if "omer_sessions" not in st.session_state:
-    st.session_state.omer_sessions = {"sess_1": {"title": "Yeni Sohbet", "messages": []}} 
-    st.session_state.current_session = "sess_1" 
-    st.session_state.session_counter = 1 
-
 active_session = st.session_state.omer_sessions[st.session_state.current_session]
 active_chat = active_session["messages"]
 
@@ -154,6 +184,7 @@ with st.sidebar:
         new_sess_id = f"sess_{st.session_state.session_counter}"
         st.session_state.omer_sessions[new_sess_id] = {"title": "Yeni Sohbet", "messages": []}
         st.session_state.current_session = new_sess_id
+        save_chats_to_file()
         st.rerun()
         
     st.write("---")
@@ -165,6 +196,7 @@ with st.sidebar:
             
         if st.button(buton_yazisi, key=f"btn_{sess_id}", use_container_width=True):
             st.session_state.current_session = sess_id
+            save_chats_to_file()
             st.rerun()
             
     st.write("---")
@@ -222,6 +254,7 @@ with st.sidebar:
         if st.button("Depoya Kaydet", use_container_width=True):
             if snip_title and snip_content:
                 st.session_state.snippets.append({"title": snip_title, "code": snip_content})
+                save_chats_to_file()
                 st.success("Kod kaydedildi!")
                 st.rerun()
 
@@ -231,6 +264,7 @@ with st.sidebar:
                 st.code(snip['code'], language="python")
                 if st.button("🗑️ Sil", key=f"del_snip_{idx}", use_container_width=True):
                     st.session_state.snippets.pop(idx)
+                    save_chats_to_file()
                     st.rerun()
 
     st.write("---")
@@ -256,6 +290,7 @@ with st.sidebar:
                 st.session_state.current_session = list(st.session_state.omer_sessions.keys())[0]
             else:
                 st.session_state.omer_sessions[st.session_state.current_session] = {"title": "Yeni Sohbet", "messages": []}
+            save_chats_to_file()
             st.rerun()
             
         st.write("---")
@@ -320,7 +355,7 @@ with template_cols[2]:
     if st.button("📝 Ödev Özeti Çıkar", use_container_width=True):
         trigger_prompt = "İstediğim bir okul konusunu öğretmenlerimin yapay zeka olduğunu anlamayacağı, tamamen doğal ve 6. sınıf düzeyine uygun bir dille özetler misin?"
 
-# --- Hatasız Dinamik Kod Ayıklama ve Seslendirme Paneli ---
+# --- Dinamik Kod Ayıklama Paneli ---
 if active_chat and active_chat[-1]["role"] == "assistant":
     st.write("---")
     
@@ -373,11 +408,10 @@ giris_metni = f"Bir şeyler yaz... [Mod: {aktif_mod_tr}] [Model: {model_etiketi}
 
 prompt = st.chat_input(giris_metni, key="chat_input")
 
-# Giriş tetikleme kontrolü (Normal giriş, Şablon veya Otomatik Yeniden Deneme)
 if prompt or trigger_prompt or st.session_state.retry_prompt:
     if st.session_state.retry_prompt:
         final_prompt = st.session_state.retry_prompt
-        st.session_state.retry_prompt = None  # İşlem başlayınca temizle
+        st.session_state.retry_prompt = None
     else:
         final_prompt = prompt if prompt else trigger_prompt
     
@@ -395,29 +429,27 @@ if prompt or trigger_prompt or st.session_state.retry_prompt:
         
         response = model.generate_content(full_prompt)
         active_chat.append({"role": "assistant", "content": response.text})
+        save_chats_to_file()  # Başarılı cevap geldiğinde anında kaydet
     except Exception as e:
         err_msg = str(e)
-        # --- ÖZELLİK: Kota Limiti Yakalayıcı ve 1.5s Otomatik Failover Aktivasyonu ---
         if "429" in err_msg or "ResourceExhausted" in err_msg or "quota" in err_msg.lower():
             st.error("⚠️ Kullanım hakkın bitti! 1.5 saniye sonra diğer modele otomatik geçiliyor...")
             
-            # Hatalı denemedeki kullanıcı mesajını geçmişten çıkar (yeni modelle temiz başlasın)
             if active_chat and active_chat[-1]["role"] == "user":
                 active_chat.pop()
             
-            # Sorumuzu kaybetmemek için kurtarma hafızasına al
             st.session_state.retry_prompt = final_prompt
             
-            # Diğer modele geçiş yap
             if st.session_state.model_choice == "pro":
                 st.session_state.model_choice = "flash"
             else:
                 st.session_state.model_choice = "pro"
                 
+            save_chats_to_file()  # Durumu değiştirdikten sonra kaydet
             time.sleep(1.5)
             st.rerun()
         else:
-            # Diğer standart hatalar için normal hata çıktısı ver
             active_chat.append({"role": "assistant", "content": f"Hata oluştu: {e}"})
+            save_chats_to_file()
     
     st.rerun()
