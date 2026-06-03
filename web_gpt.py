@@ -2,8 +2,9 @@ import streamlit as st
 import google.generativeai as genai
 import io
 import sys
+import re  # Kod bloklarını ayıklamak için gerekli kütüphane
 from contextlib import redirect_stdout
-from gtts import gTTS  # Seslendirme için gerekli kütüphane
+from gtts import gTTS
 
 # Sayfa Yapılandırması
 st.set_page_config(page_title="ÖmerGPT Pro", layout="wide")
@@ -19,64 +20,81 @@ if "show_code_runner" not in st.session_state:
     st.session_state.show_code_runner = False
 
 if "snippets" not in st.session_state:
-    st.session_state.snippets = []  # Kod deposu hafızası
+    st.session_state.snippets = []
 
 if "app_theme" not in st.session_state:
-    st.session_state.app_theme = "varsayilan"  # Tema hafızası
+    st.session_state.app_theme = "varsayilan"
 
-# --- ÖZELLİK 2: Tema Enjeksiyon Sistemi (CSS) ---
+# --- Kusursuz Nokta Atışı Temalar ---
 def apply_theme(theme_name):
     if theme_name == "matrix":
         st.markdown("""
             <style>
-            [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .stApp {
-                background-color: #000000 !important;
+            [data-testid="stAppViewContainer"], [data-testid="stSidebar"], [data-testid="stHeader"] {
+                background-color: #050505 !important;
             }
-            h1, h2, h3, p, span, label, .stMarkdown, div {
-                color: #00FF00 !important;
-                font-family: 'Courier New', Courier, monospace !important;
+            h1, h2, h3, h4, h5, h6, .stMarkdown p, label, .stCaption {
+                color: #00ff66 !important;
+                font-family: 'Consolas', monospace !important;
             }
             .stButton>button {
-                background-color: #001100 !important;
-                color: #00FF00 !important;
-                border: 1px solid #00FF00 !important;
+                background-color: #0a140a !important;
+                color: #00ff66 !important;
+                border: 1px solid #00ff66 !important;
+                font-family: 'Consolas', monospace !important;
+            }
+            .stButton>button:hover {
+                background-color: #00ff66 !important;
+                color: #050505 !important;
             }
             </style>
         """, unsafe_allow_html=True)
     elif theme_name == "cyberpunk":
         st.markdown("""
             <style>
-            [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .stApp {
-                background-color: #120421 !important;
+            [data-testid="stAppViewContainer"], [data-testid="stSidebar"], [data-testid="stHeader"] {
+                background-color: #0b0c10 !important;
             }
-            h1, h2, h3, p, span, label, .stMarkdown, div {
-                color: #00ffff !important;
+            h1, h2, h3, h4, h5, h6, .stMarkdown p, label, .stCaption {
+                color: #00f0ff !important;
+                font-family: 'Segoe UI', sans-serif !important;
             }
             .stButton>button {
-                background-color: #25093a !important;
+                background-color: #1f2833 !important;
                 color: #ff007f !important;
                 border: 1px solid #ff007f !important;
+                box-shadow: 0 0 5px #ff007f;
+            }
+            .stButton>button:hover {
+                background-color: #ff007f !important;
+                color: #ffffff !important;
             }
             </style>
         """, unsafe_allow_html=True)
     elif theme_name == "vscode":
         st.markdown("""
             <style>
-            [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .stApp {
+            [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
                 background-color: #1e1e1e !important;
             }
-            h1, h2, h3, p, span, label, .stMarkdown, div {
+            [data-testid="stSidebar"] {
+                background-color: #252526 !important;
+            }
+            h1, h2, h3, h4, h5, h6, .stMarkdown p, label, .stCaption {
                 color: #d4d4d4 !important;
             }
             .stButton>button {
-                background-color: #2d2d2d !important;
-                color: #3b82f6 !important;
+                background-color: #333333 !important;
+                color: #007acc !important;
                 border: 1px solid #3e3e3e !important;
+            }
+            .stButton>button:hover {
+                background-color: #007acc !important;
+                color: #ffffff !important;
             }
             </style>
         """, unsafe_allow_html=True)
 
-# Seçili temayı ekrana uygula
 apply_theme(st.session_state.app_theme)
 
 st.title("ÖmerGPT Pro - Kişisel Asistan")
@@ -171,7 +189,6 @@ with st.sidebar:
 
     st.write("---")
 
-    # ÖZELLİK 2: Tema Seçim Butonları
     st.subheader("🎨 Arayüz Teması")
     t_cols = st.columns(2)
     with t_cols[0]:
@@ -191,7 +208,7 @@ with st.sidebar:
 
     st.write("---")
 
-    # ÖZELLİK 1: Favori Kod Deposu (Snippet Library)
+    # Favori Kod Deposu
     st.subheader("💾 Favori Kod Deposu")
     with st.expander("➕ Yeni Kod Parçası Ekle"):
         snip_title = st.text_input("Kod Başlığı:", key="new_snip_title")
@@ -257,7 +274,7 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Kod Hatası: {e}")
 
-    # ÖZELLİK 4: Küçük Yazılarla İstatistik Paneli
+    # Küçük Yazılarla İstatistik Paneli
     st.write("---")
     total_msg = len(active_chat)
     user_msg = len([m for m in active_chat if m["role"] == "user"])
@@ -284,7 +301,7 @@ for message in active_chat:
 
 st.write("") 
 
-# ÖZELLİK 3: Hızlı Şablon Butonları
+# Hızlı Şablon Butonları
 st.write("🎯 **Hızlı Şablonlar:**")
 template_cols = st.columns(3)
 with template_cols[0]:
@@ -297,19 +314,53 @@ with template_cols[2]:
     if st.button("📝 Ödev Özeti Çıkar", use_container_width=True):
         trigger_prompt = "İstediğim bir okul konusunu öğretmenlerimin yapay zeka olduğunu anlamayacağı, tamamen doğal ve 6. sınıf düzeyine uygun bir dille özetler misin?"
 
-# ÖZELLİK 3 (TTS): Seslendirme Butonu Yerleşimi (Eğer en son mesaj asistan tarafından geldiyse aktif olur)
+# --- ÖZELLİK 2 GÜNCELLEME: Seslendirme ve Dinamik .py Dosyası İndirme Paneli ---
 if active_chat and active_chat[-1]["role"] == "assistant":
     st.write("---")
-    if st.button("🔊 Son Cevabı Seslendir", use_container_width=True):
-        try:
-            clean_text_to_speak = active_chat[-1]["content"].replace("```python", "").replace("```", "")
-            tts = gTTS(text=clean_text_to_speak, lang='tr')
-            sound_buffer = io.BytesIO()
-            tts.write_to_fp(sound_buffer)
-            sound_buffer.seek(0)
-            st.audio(sound_buffer, format='audio/mp3', autoplay=True)
-        except Exception as e:
-            st.error(f"Seslendirme Hatası: {e}. Lütfen requirements.txt dosyanıza 'gTTS' eklediğinizden emin olun.")
+    
+    # Son mesajın içindeki kod bloklarını düzenli ifadelerle tespit etme
+    last_msg_content = active_chat[-1]["content"]
+    code_blocks = re.findall(r"```python(.*?)
+```", last_msg_content, re.DOTALL)
+    if not code_blocks:
+        code_blocks = re.findall(r"```(.*?)```", last_msg_content, re.DOTALL)
+        
+    extracted_code = "\n\n".join(code_blocks).strip() if code_blocks else None
+
+    # Eğer kod tespit edildiyse butonları yan yana (2 sütun) göster
+    if extracted_code:
+        action_cols = st.columns(2)
+        with action_cols[0]:
+            if st.button("🔊 Son Cevabı Seslendir", use_container_width=True):
+                try:
+                    clean_text_to_speak = last_msg_content.replace("```python", "").replace("
+```", "")
+                    tts = gTTS(text=clean_text_to_speak, lang='tr')
+                    sound_buffer = io.BytesIO()
+                    tts.write_to_fp(sound_buffer)
+                    sound_buffer.seek(0)
+                    st.audio(sound_buffer, format='audio/mp3', autoplay=True)
+                except Exception as e:
+                    st.error(f"Seslendirme Hatası: {e}")
+        with action_cols[1]:
+            st.download_button(
+                label="📥 Üretilen Kodu .py Olarak İndir",
+                data=extracted_code,
+                file_name="kod_projesi.py",
+                mime="text/x-python",
+                use_container_width=True
+            )
+    else:
+        # Eğer kod bloğu yoksa sadece tek bir geniş Seslendirme butonu göster
+        if st.button("🔊 Son Cevabı Seslendir", use_container_width=True):
+            try:
+                tts = gTTS(text=last_msg_content, lang='tr')
+                sound_buffer = io.BytesIO()
+                tts.write_to_fp(sound_buffer)
+                sound_buffer.seek(0)
+                st.audio(sound_buffer, format='audio/mp3', autoplay=True)
+            except Exception as e:
+                st.error(f"Seslendirme Hatası: {e}")
 
 mod_isimleri = {"normal": "Normal", "kod_yazici": "Kod Yazıcı"}
 aktif_mod_tr = mod_isimleri.get(st.session_state.ai_mode, "Normal")
