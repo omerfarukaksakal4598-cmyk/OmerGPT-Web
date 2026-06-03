@@ -28,9 +28,10 @@ if "model_name" not in st.session_state:
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel(st.session_state.model_name)
 
-# --- 2. GELİŞMİŞ HAFIZA: Dinamik Başlıklı Sohbet Odaları ---
-if "sessions" not in st.session_state:
-    st.session_state.sessions = {"sess_1": {"title": "Yeni Sohbet", "messages": []}} 
+# --- 2. GELİŞMİŞ HAFIZA: Çakışmayı Önleyen Yeni Hafıza Alanı ---
+if "omer_sessions" not in st.session_state:
+    # Anahtar adını 'omer_sessions' yaptık ki eski liste verileriyle çakışmasın
+    st.session_state.omer_sessions = {"sess_1": {"title": "Yeni Sohbet", "messages": []}} 
     st.session_state.current_session = "sess_1" 
     st.session_state.session_counter = 1 
 if "todo" not in st.session_state: 
@@ -41,16 +42,16 @@ with st.sidebar:
     st.header("📜 Sohbet Geçmişi")
     
     if st.button("➕ Yeni Sohbet Başlat", use_container_width=True):
-        st.session_state.session_counter += 1
+        st.session_counter += 1
         new_sess_id = f"sess_{st.session_state.session_counter}"
-        st.session_state.sessions[new_sess_id] = {"title": "Yeni Sohbet", "messages": []}
+        st.session_state.omer_sessions[new_sess_id] = {"title": "Yeni Sohbet", "messages": []}
         st.session_state.current_session = new_sess_id
         st.rerun()
         
     st.write("---")
     st.subheader("📁 Eski Sohbetler")
     
-    for sess_id, sess_data in reversed(list(st.session_state.sessions.items())):
+    for sess_id, sess_data in reversed(list(st.session_state.omer_sessions.items())):
         baslik = sess_data["title"]
         buton_yazisi = f"🟢 {baslik}" if sess_id == st.session_state.current_session else f"💬 {baslik}"
             
@@ -59,10 +60,10 @@ with st.sidebar:
             st.rerun()
 
 # =====================================================================
-# ANA EKRAN TASARIMI (Üstte Araçlar, Altta Sohbet)
+# ANA EKRAN TASARIMI
 # =====================================================================
 
-# --- ÜST BÖLÜM: ARAÇLAR ---
+# --- ÜST BÖLÜM: SOHBETİN ÜSTÜNDEKİ ARAÇLAR ---
 col1, col2 = st.columns(2)
 
 with col1:
@@ -86,12 +87,12 @@ with col2:
         for i, item in enumerate(st.session_state.todo):
             st.write(f"✅ {i+1}. {item}")
 
-st.divider() # Araya şık bir ayrım çizgisi
+st.divider() # Ayrım Çizgisi
 
-# --- ALT BÖLÜM: SOHBET ---
+# --- ALT BÖLÜM: SOHBET ALANI ---
 uploaded_file = st.file_uploader("Dosya Analizi için PDF/Metin yükle", type=['pdf', 'txt'], key=f"file_{st.session_state.current_session}")
 
-# Model ismini "pro+", "pro" veya "poer" olarak belirleme
+# Model Güç Etiketleri Ayarı
 m_name = st.session_state.model_name.lower()
 if "1.5-pro" in m_name or "2.5-pro" in m_name:
     model_etiketi = "pro+"
@@ -100,20 +101,23 @@ elif "flash" in m_name:
 else:
     model_etiketi = "poer"
 
+# Aktif Model Bilgisi Giriş Kutusunun Üstünde Duruyor
 st.caption(f"⚡ **Aktif Model:** `{model_etiketi}`")
 
-active_session = st.session_state.sessions[st.session_state.current_session]
+active_session = st.session_state.omer_sessions[st.session_state.current_session]
 active_chat = active_session["messages"]
 
+# Mesaj Geçmişini Göster
 for message in active_chat:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-st.write("") # Alt boşluk
+st.write("") # Boşluk
 
-# Soru Sorma Girişi (Her zaman en altta)
+# Soru Sorma Girişi (Her Zaman En Altta Sabit kalır)
 if prompt := st.chat_input("Bir şeyler yaz...", key="chat_input"):
     
+    # Eğer ilk mesajsa sohbetin adını konuya göre değiştir
     if len(active_chat) == 0:
         yeni_baslik = prompt if len(prompt) <= 25 else prompt[:25] + "..."
         active_session["title"] = yeni_baslik
