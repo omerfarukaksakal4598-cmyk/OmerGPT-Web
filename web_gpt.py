@@ -2,7 +2,6 @@ import streamlit as st
 import google.generativeai as genai
 import io
 import sys
-import time
 from contextlib import redirect_stdout
 
 # Sayfa Yapılandırması
@@ -14,7 +13,7 @@ if "GOOGLE_API_KEY" not in st.secrets:
     st.error("HATA: Streamlit Secrets içinde 'GOOGLE_API_KEY' bulunamadı.")
     st.stop()
 
-# Model ismini hafızada tutalım
+# Model ismini hafızada tut
 if "model_name" not in st.session_state:
     try:
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
@@ -27,54 +26,67 @@ if "model_name" not in st.session_state:
         st.error(f"API Bağlantı Hatası: {e}")
         st.stop()
 
-# Aktif modeli bağla
+# Modeli bağla
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel(st.session_state.model_name)
 
-# Session State Tanımlamaları
-if "messages" not in st.session_state: st.session_state.messages = []
-if "todo" not in st.session_state: st.session_state.todo = []
+# --- 2. GELİŞMİŞ HAFIZA: Sohbet Odaları ---
+if "sessions" not in st.session_state:
+    st.session_state.sessions = {"Sohbet 1": []} # Tüm sohbetleri tutan sözlük
+    st.session_state.current_session = "Sohbet 1" # Şu an aktif olan sohbet
+    st.session_state.session_counter = 1 # Sohbet numaralandırıcısı
+if "todo" not in st.session_state: 
+    st.session_state.todo = []
 
-# --- SİDEBAR: Sol Menüye Eski Sohbet Geçmişi Eklendi ---
+# --- SİDEBAR: Gerçek Sohbet Geçmişi Yönetimi ---
 with st.sidebar:
-    st.header("📜 Sohbet Odası")
+    st.header("📜 Sohbet Geçmişi")
     
-    # Yeni Sohbet Başlatma Butonu
+    # Yeni Sohbet Açma
     if st.button("➕ Yeni Sohbet Başlat", use_container_width=True):
-        st.session_state.messages = []
+        st.session_state.session_counter += 1
+        new_session_name = f"Sohbet {st.session_state.session_counter}"
+        st.session_state.sessions[new_session_name] = []
+        st.session_state.current_session = new_session_name
         st.rerun()
         
     st.write("---")
-    st.subheader("💬 Son Soruların")
+    st.subheader("📁 Eski Sohbetler")
     
-    # Kullanıcının sorduğu soruları geçmiş olarak listele
-    user_prompts = [m["content"] for m in st.session_state.messages if m["role"] == "user"]
-    if user_prompts:
-        for p in reversed(user_prompts[-10:]):  # Son 10 soruyu tersten gösterir
-            kisa_soru = p if len(p) <= 25 else p[:25] + "..."
-            st.text(f"• {kisa_soru}")
-    else:
-        st.caption("Henüz soru sorulmadı. Yazdıkça geçmiş burada birikecek.")
+    # Eski sohbetleri buton olarak listele (En yenisi en üstte)
+    for session_name in reversed(list(st.session_state.sessions.keys())):
+        # Eğer buton aktif sohbetse farklı bir ikon/yazı gösterebiliriz
+        if session_name == st.session_state.current_session:
+            buton_yazisi = f"🟢 {session_name} (Aktif)"
+        else:
+            buton_yazisi = f"💬 {session_name}"
+            
+        # Butona tıklandığında o sohbete geçiş yap
+        if st.button(buton_yazisi, key=f"btn_{session_name}", use_container_width=True):
+            st.session_state.current_session = session_name
+            st.rerun()
 
-# --- Sekmeler ---
+# --- Ana Ekran Sekmeleri ---
 tab1, tab2, tab3 = st.tabs(["Sohbet & Analiz", "Kod Çalıştırıcı", "Görev Yöneticisi"])
 
 with tab1:
     # Dosya Yükleyici
-    uploaded_file = st.file_uploader("Dosya Analizi için PDF/Metin yükle", type=['pdf', 'txt'], key="file_tab1")
+    uploaded_file = st.file_uploader("Dosya Analizi için PDF/Metin yükle", type=['pdf', 'txt'], key=f"file_{st.session_state.current_session}")
     
-    # Eski mesajları ekrana bas
-    for message in st.session_state.messages:
+    # AKTİF SOHBETİN mesajlarını çek ve ekrana bas
+    active_chat = st.session_state.sessions[st.session_state.current_session]
+    
+    for message in active_chat:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    st.write("") # Küçük boşluk
-    # AKTİF MODEL: İstediğin gibi tam soru sorma yerinin hemen üzerinde duruyor
-    st.caption(f"⚡ **Aktif Model:** `{st.session_state.model_name}`")
+    st.write("")
+    st.caption(f"⚡ **Aktif Model:** `{st.session_state.model_name}` | **Oda:** `{st.session_state.current_session}`")
 
-    # Soru Sorma Girişi (st.rerun sayesinde artık asla yukarıda kalmaz)
+    # Soru Sorma Girişi
     if prompt := st.chat_input("Bir şeyler yaz...", key="chat_input"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
+        # Mesajı aktif sohbete kaydet
+        active_chat.append({"role": "user", "content": prompt})
         
         try:
             full_prompt = prompt
@@ -83,11 +95,10 @@ with tab1:
                 full_prompt = f"Dosya içeriği: {content} \n Soru: {prompt}"
             
             response = model.generate_content(full_prompt)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
+            active_chat.append({"role": "assistant", "content": response.text})
         except Exception as e:
-            st.session_state.messages.append({"role": "assistant", "content": f"Hata oluştu: {e}"})
+            active_chat.append({"role": "assistant", "content": f"Hata oluştu: {e}"})
         
-        # Sayfayı anında yenileyerek kutuyu en alta kilitler!
         st.rerun()
 
 with tab2:
