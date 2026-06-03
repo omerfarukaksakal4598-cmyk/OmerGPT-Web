@@ -28,21 +28,18 @@ if "model_name" not in st.session_state:
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel(st.session_state.model_name)
 
-# --- 2. GELİŞMİŞ HAFIZA: Çakışmayı Önleyen Yeni Hafıza Alanı ---
+# --- 2. GELİŞMİŞ HAFIZA ---
 if "omer_sessions" not in st.session_state:
-    # Anahtar adını 'omer_sessions' yaptık ki eski liste verileriyle çakışmasın
     st.session_state.omer_sessions = {"sess_1": {"title": "Yeni Sohbet", "messages": []}} 
     st.session_state.current_session = "sess_1" 
     st.session_state.session_counter = 1 
-if "todo" not in st.session_state: 
-    st.session_state.todo = []
 
-# --- SİDEBAR: Akıllı Sohbet Geçmişi ---
+# --- SİDEBAR: Sol Menü Tasarımı ---
 with st.sidebar:
     st.header("📜 Sohbet Geçmişi")
     
     if st.button("➕ Yeni Sohbet Başlat", use_container_width=True):
-        st.session_counter += 1
+        st.session_state.session_counter += 1
         new_sess_id = f"sess_{st.session_state.session_counter}"
         st.session_state.omer_sessions[new_sess_id] = {"title": "Yeni Sohbet", "messages": []}
         st.session_state.current_session = new_sess_id
@@ -58,38 +55,27 @@ with st.sidebar:
         if st.button(buton_yazisi, key=f"btn_{sess_id}", use_container_width=True):
             st.session_state.current_session = sess_id
             st.rerun()
+            
+    st.write("---")
+    
+    # İSTEDİĞİN GÜNCELLEME: Python Kod Çalıştırıcı artık tam burada!
+    st.header("🐍 Python Kod Çalıştırıcı")
+    code = st.text_area("Kod yazın:", "print('ÖmerGPT ile deneme')", height=150, key="sidebar_code")
+    if st.button("Kodu Çalıştır", key="btn_sidebar_code", use_container_width=True):
+        f = io.StringIO()
+        try:
+            with redirect_stdout(f):
+                exec(code)
+            st.success("Çıktı:")
+            st.code(f.getvalue())
+        except Exception as e:
+            st.error(f"Kod Hatası: {e}")
 
 # =====================================================================
-# ANA EKRAN TASARIMI
+# ANA SOHBET EKRANI
 # =====================================================================
 
-# --- ÜST BÖLÜM: SOHBETİN ÜSTÜNDEKİ ARAÇLAR ---
-col1, col2 = st.columns(2)
-
-with col1:
-    with st.expander("🐍 Python Kod Çalıştırıcı", expanded=False):
-        code = st.text_area("Kod yazın:", "print('ÖmerGPT ile deneme')", height=150, key="code_tab2")
-        if st.button("Kodu Çalıştır", key="btn_tab2"):
-            f = io.StringIO()
-            try:
-                with redirect_stdout(f):
-                    exec(code)
-                st.success("Çıktı:")
-                st.code(f.getvalue())
-            except Exception as e:
-                st.error(f"Kod Hatası: {e}")
-
-with col2:
-    with st.expander("✅ Görev Yöneticisi", expanded=False):
-        gorev = st.text_input("Yapılacak bir iş ekle:", key="input_tab3")
-        if st.button("Ekle", key="btn_add_tab3"):
-            if gorev: st.session_state.todo.append(gorev)
-        for i, item in enumerate(st.session_state.todo):
-            st.write(f"✅ {i+1}. {item}")
-
-st.divider() # Ayrım Çizgisi
-
-# --- ALT BÖLÜM: SOHBET ALANI ---
+# Dosya Yükleyici
 uploaded_file = st.file_uploader("Dosya Analizi için PDF/Metin yükle", type=['pdf', 'txt'], key=f"file_{st.session_state.current_session}")
 
 # Model Güç Etiketleri Ayarı
@@ -101,7 +87,7 @@ elif "flash" in m_name:
 else:
     model_etiketi = "poer"
 
-# Aktif Model Bilgisi Giriş Kutusunun Üstünde Duruyor
+# Aktif Model Bilgisi Giriş Kutusunun Üstünde Sabitlendi
 st.caption(f"⚡ **Aktif Model:** `{model_etiketi}`")
 
 active_session = st.session_state.omer_sessions[st.session_state.current_session]
@@ -112,7 +98,7 @@ for message in active_chat:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-st.write("") # Boşluk
+st.write("") # Alt boşluk
 
 # Soru Sorma Girişi (Her Zaman En Altta Sabit kalır)
 if prompt := st.chat_input("Bir şeyler yaz...", key="chat_input"):
