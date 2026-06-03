@@ -14,54 +14,81 @@ if "GOOGLE_API_KEY" not in st.secrets:
     st.error("HATA: Streamlit Secrets içinde 'GOOGLE_API_KEY' bulunamadı.")
     st.stop()
 
-try:
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    
-    # Sistemin desteklediği modellerden sohbet yeteneği olanı bul
-    def get_best_model():
+# Model ismini hafızada tutalım
+if "model_name" not in st.session_state:
+    try:
+        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
         models = [m for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         if not models:
-            raise Exception("Kullanılabilecek model bulunamadı.")
-        # İlk uygun modeli döndür
-        return genai.GenerativeModel(models[0].name)
+            st.error("Kullanılabilecek model bulunamadı.")
+            st.stop()
+        st.session_state.model_name = models[0].name
+    except Exception as e:
+        st.error(f"API Bağlantı Hatası: {e}")
+        st.stop()
 
-    model = get_best_model()
-    st.sidebar.success(f"Aktif Model: {model._model_name}")
+# Aktif modeli bağla
+genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+model = genai.GenerativeModel(st.session_state.model_name)
 
-except Exception as e:
-    st.error(f"API Bağlantı Hatası: {e}")
-    st.stop()
-
-# Session State
+# Session State Tanımlamaları
 if "messages" not in st.session_state: st.session_state.messages = []
 if "todo" not in st.session_state: st.session_state.todo = []
+
+# --- SİDEBAR: Sol Menüye Eski Sohbet Geçmişi Eklendi ---
+with st.sidebar:
+    st.header("📜 Sohbet Odası")
+    
+    # Yeni Sohbet Başlatma Butonu
+    if st.button("➕ Yeni Sohbet Başlat", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
+        
+    st.write("---")
+    st.subheader("💬 Son Soruların")
+    
+    # Kullanıcının sorduğu soruları geçmiş olarak listele
+    user_prompts = [m["content"] for m in st.session_state.messages if m["role"] == "user"]
+    if user_prompts:
+        for p in reversed(user_prompts[-10:]):  # Son 10 soruyu tersten gösterir
+            kisa_soru = p if len(p) <= 25 else p[:25] + "..."
+            st.text(f"• {kisa_soru}")
+    else:
+        st.caption("Henüz soru sorulmadı. Yazdıkça geçmiş burada birikecek.")
 
 # --- Sekmeler ---
 tab1, tab2, tab3 = st.tabs(["Sohbet & Analiz", "Kod Çalıştırıcı", "Görev Yöneticisi"])
 
 with tab1:
+    # Dosya Yükleyici
     uploaded_file = st.file_uploader("Dosya Analizi için PDF/Metin yükle", type=['pdf', 'txt'], key="file_tab1")
     
+    # Eski mesajları ekrana bas
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    if prompt := st.chat_input("Bir şeyler yaz..."):
+    st.write("") # Küçük boşluk
+    # AKTİF MODEL: İstediğin gibi tam soru sorma yerinin hemen üzerinde duruyor
+    st.caption(f"⚡ **Aktif Model:** `{st.session_state.model_name}`")
+
+    # Soru Sorma Girişi (st.rerun sayesinde artık asla yukarıda kalmaz)
+    if prompt := st.chat_input("Bir şeyler yaz...", key="chat_input"):
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.markdown(prompt)
         
-        with st.chat_message("assistant"):
-            try:
-                full_prompt = prompt
-                if uploaded_file:
-                    content = uploaded_file.read().decode('utf-8')
-                    full_prompt = f"Dosya içeriği: {content} \n Soru: {prompt}"
-                
-                response = model.generate_content(full_prompt)
-                st.markdown(response.text)
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
-            except Exception as e:
-                st.error(f"Yanıt alınamadı: {e}")
+        try:
+            full_prompt = prompt
+            if uploaded_file:
+                content = uploaded_file.read().decode('utf-8')
+                full_prompt = f"Dosya içeriği: {content} \n Soru: {prompt}"
+            
+            response = model.generate_content(full_prompt)
+            st.session_state.messages.append({"role": "assistant", "content": response.text})
+        except Exception as e:
+            st.session_state.messages.append({"role": "assistant", "content": f"Hata oluştu: {e}"})
+        
+        # Sayfayı anında yenileyerek kutuyu en alta kilitler!
+        st.rerun()
 
 with tab2:
     st.subheader("Python Kod Çalıştırıcı")
