@@ -8,7 +8,7 @@ import json
 import os
 from contextlib import redirect_stdout
 from gtts import gTTS
-from PIL import Image  # Görsel analizi için eklendi
+from PIL import Image, ImageEnhance  # Parlaklık ayarı için ImageEnhance eklendi
 
 # Sayfa Yapılandırması
 st.set_page_config(page_title="ÖmerGPT Pro", layout="wide")
@@ -158,7 +158,7 @@ if "model_list" not in st.session_state:
 
 selected_model_name = None
 for m in st.session_state.model_list:
-    if st.session_state.model_choice in m.lower():
+    if m and st.session_state.model_choice in m.lower():
         selected_model_name = m
         break
 if not selected_model_name and st.session_state.model_list:
@@ -177,7 +177,7 @@ active_chat = active_session["messages"]
 trigger_prompt = None
 bt = "`" * 3 
 
-# --- SİDEBAR: Sol Menü Tasarımı ---
+# --- SİDEBAR: Sol Men Menü Tasarımı ---
 with st.sidebar:
     st.header("📜 Sohbet Geçmişi")
     
@@ -191,14 +191,12 @@ with st.sidebar:
         
     st.write("---")
     
-    # --- YENİ: Arama Filtresi ---
     st.subheader("📁 Eski Sohbetler")
     search_query = st.text_input("🔍 Sohbetlerde Ara...", key="chat_search")
     
     for sess_id, sess_data in reversed(list(st.session_state.omer_sessions.items())):
         baslik = sess_data["title"]
         
-        # Eğer arama kutusu doluysa ve kelime başlıkta yoksa, bu butonu çizme (atla)
         if search_query and search_query.lower() not in baslik.lower():
             continue
             
@@ -339,11 +337,19 @@ with st.sidebar:
     st.caption(f"• Üretilen Kelime: {total_words}")
 
 # =====================================================================
-# ANA SOHBET EKRANI
+# ANA SOHBET EKRANI (Geliştirilmiş Çoklu Ortam Girişi)
 # =====================================================================
 
-# --- YENİ: Görsel Destekli Dosya Yükleyici ---
-uploaded_file = st.file_uploader("Dosya veya Ekran Görüntüsü Yükle (TXT, PNG, JPG)", type=['txt', 'png', 'jpg', 'jpeg'], key=f"file_{st.session_state.current_session}")
+# Şık bir Sekme (Tab) yapısı oluşturarak ekranı düzenliyoruz
+tab_upload, tab_camera = st.tabs(["📁 Dosya / Fotoğraf Yükle", "📸 Canlı Kamera ile Çek"])
+
+with tab_upload:
+    uploaded_file = st.file_uploader("Metin belgesi veya hazır resim seç:", type=['txt', 'png', 'jpg', 'jpeg'], key=f"file_{st.session_state.current_session}")
+
+with tab_camera:
+    camera_file = st.camera_input("Soru sormak istediğin kodu veya ödevi kameraya göster:")
+    # --- KARANLIK ÖNLEME SİSTEMİ (Exposure Booster) ---
+    brightness_val = st.slider("☀️ Dijital Pozlama Gücü (Karanlık Ortam Ayarı)", 1.0, 3.0, 1.3, step=0.1, help="Fotoğraf karanlık çıkarsa bu değeri artırarak yapay zekanın resmi net görmesini sağlayabilirsin.")
 
 model_etiketi = "pro+" if st.session_state.model_choice == "pro" else "pro"
 
@@ -369,9 +375,7 @@ with template_cols[2]:
 # --- Dinamik Kod Ayıklama Paneli ---
 if active_chat and active_chat[-1]["role"] == "assistant":
     st.write("---")
-    
     last_msg_content = active_chat[-1]["content"]
-    
     pattern_py = bt + "python(.*?)" + bt
     pattern_all = bt + "(.*?)" + bt
     
@@ -433,8 +437,19 @@ if prompt or trigger_prompt or st.session_state.retry_prompt:
     active_chat.append({"role": "user", "content": final_prompt})
     
     try:
-        # --- YENİ: Görsel Analizi İşleme ---
-        if uploaded_file:
+        payload = None
+        
+        # 1. Senaryo: Canlı Kamera Görüntüsü Varsa
+        if camera_file:
+            img = Image.open(camera_file)
+            # Işık Güçlendirme Sihirbazı Devreye Giriyor:
+            if brightness_val != 1.0:
+                enhancer = ImageEnhance.Brightness(img)
+                img = enhancer.enhance(brightness_val)
+            payload = [final_prompt, img]
+            
+        # 2. Senaryo: Normal Dosya Yüklenmişse
+        elif uploaded_file:
             if uploaded_file.name.lower().endswith(('.png', '.jpg', '.jpeg')):
                 img = Image.open(uploaded_file)
                 payload = [final_prompt, img]
@@ -442,6 +457,7 @@ if prompt or trigger_prompt or st.session_state.retry_prompt:
                 content = uploaded_file.read().decode('utf-8', errors='ignore')
                 full_prompt = f"Dosya içeriği: {content} \n\n Soru: {final_prompt}"
                 payload = full_prompt
+        # 3. Senaryo: Sadece Metin Gönderilmişse
         else:
             payload = final_prompt
         
@@ -453,17 +469,13 @@ if prompt or trigger_prompt or st.session_state.retry_prompt:
         err_msg = str(e)
         if "429" in err_msg or "ResourceExhausted" in err_msg or "quota" in err_msg.lower():
             st.error("⚠️ Kullanım hakkın bitti! 1.5 saniye sonra diğer modele otomatik geçiliyor...")
-            
             if active_chat and active_chat[-1]["role"] == "user":
                 active_chat.pop()
-            
             st.session_state.retry_prompt = final_prompt
-            
             if st.session_state.model_choice == "pro":
                 st.session_state.model_choice = "flash"
             else:
                 st.session_state.model_choice = "pro"
-                
             save_chats_to_file()
             time.sleep(1.5)
             st.rerun()
