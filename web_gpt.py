@@ -138,6 +138,8 @@ active_session = st.session_state.omer_sessions[st.session_state.current_session
 active_chat = active_session["messages"]
 
 trigger_prompt = None
+# Markdown çakışmasını engellemek için dinamik üçlü tırnak oluşturucu
+bt = "`" * 3 
 
 # --- SİDEBAR: Sol Menü Tasarımı ---
 with st.sidebar:
@@ -274,7 +276,7 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Kod Hatası: {e}")
 
-    # Küçük Yazılarla İstatistik Paneli
+    # Gelişmiş İstatistik Paneli
     st.write("---")
     total_msg = len(active_chat)
     user_msg = len([m for m in active_chat if m["role"] == "user"])
@@ -306,7 +308,7 @@ st.write("🎯 **Hızlı Şablonlar:**")
 template_cols = st.columns(3)
 with template_cols[0]:
     if st.button("🐛 Hatayı Düzelt", use_container_width=True):
-        trigger_prompt = "Aşağıdaki kod bloğunda yer alan hataları bulup düzeltebilir misin?\n```python\n# Kodunu buraya yapıştır\n```"
+        trigger_prompt = f"Aşağıdaki kod bloğunda yer alan hataları bulup düzeltebilir misin?\n{bt}python\n# Kodunu buraya yapıştır\n{bt}"
 with template_cols[1]:
     if st.button("🐍 Yeni Python Projesi", use_container_width=True):
         trigger_prompt = "CustomTkinter kütüphanesini kullanarak yapabileceğim eğlenceli ve kendimi geliştirebileceğim bir Python GUI proje fikri verir misin?"
@@ -314,27 +316,28 @@ with template_cols[2]:
     if st.button("📝 Ödev Özeti Çıkar", use_container_width=True):
         trigger_prompt = "İstediğim bir okul konusunu öğretmenlerimin yapay zeka olduğunu anlamayacağı, tamamen doğal ve 6. sınıf düzeyine uygun bir dille özetler misin?"
 
-# --- ÖZELLİK 2 GÜNCELLEME: Seslendirme ve Dinamik .py Dosyası İndirme Paneli ---
+# --- Hatasız Dinamik Kod Ayıklama ve Seslendirme Paneli ---
 if active_chat and active_chat[-1]["role"] == "assistant":
     st.write("---")
     
-    # Son mesajın içindeki kod bloklarını düzenli ifadelerle tespit etme
     last_msg_content = active_chat[-1]["content"]
-    code_blocks = re.findall(r"```python(.*?)
-```", last_msg_content, re.DOTALL)
+    
+    # regex çakışmasını engellemek için string yapılandırması
+    pattern_py = bt + "python(.*?)" + bt
+    pattern_all = bt + "(.*?)" + bt
+    
+    code_blocks = re.findall(pattern_py, last_msg_content, re.DOTALL)
     if not code_blocks:
-        code_blocks = re.findall(r"```(.*?)```", last_msg_content, re.DOTALL)
+        code_blocks = re.findall(pattern_all, last_msg_content, re.DOTALL)
         
     extracted_code = "\n\n".join(code_blocks).strip() if code_blocks else None
 
-    # Eğer kod tespit edildiyse butonları yan yana (2 sütun) göster
     if extracted_code:
         action_cols = st.columns(2)
         with action_cols[0]:
             if st.button("🔊 Son Cevabı Seslendir", use_container_width=True):
                 try:
-                    clean_text_to_speak = last_msg_content.replace("```python", "").replace("
-```", "")
+                    clean_text_to_speak = last_msg_content.replace(f"{bt}python", "").replace(bt, "")
                     tts = gTTS(text=clean_text_to_speak, lang='tr')
                     sound_buffer = io.BytesIO()
                     tts.write_to_fp(sound_buffer)
@@ -351,7 +354,6 @@ if active_chat and active_chat[-1]["role"] == "assistant":
                 use_container_width=True
             )
     else:
-        # Eğer kod bloğu yoksa sadece tek bir geniş Seslendirme butonu göster
         if st.button("🔊 Son Cevabı Seslendir", use_container_width=True):
             try:
                 tts = gTTS(text=last_msg_content, lang='tr')
