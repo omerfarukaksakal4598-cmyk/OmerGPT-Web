@@ -3,6 +3,7 @@ import google.generativeai as genai
 import io
 import sys
 import re  # Kod bloklarını ayıklamak için gerekli kütüphane
+import time  # 1.5 saniye bekletme senaryosu için gerekli kütüphane
 from contextlib import redirect_stdout
 from gtts import gTTS
 
@@ -24,6 +25,10 @@ if "snippets" not in st.session_state:
 
 if "app_theme" not in st.session_state:
     st.session_state.app_theme = "varsayilan"
+
+# Otomatik model geçişlerinde sorunun kaybolmaması için geçici hafıza kutusu
+if "retry_prompt" not in st.session_state:
+    st.session_state.retry_prompt = None
 
 # --- Kusursuz Nokta Atışı Temalar ---
 def apply_theme(theme_name):
@@ -138,7 +143,6 @@ active_session = st.session_state.omer_sessions[st.session_state.current_session
 active_chat = active_session["messages"]
 
 trigger_prompt = None
-# Markdown çakışmasını engellemek için dinamik üçlü tırnak oluşturucu
 bt = "`" * 3 
 
 # --- SİDEBAR: Sol Menü Tasarımı ---
@@ -322,7 +326,6 @@ if active_chat and active_chat[-1]["role"] == "assistant":
     
     last_msg_content = active_chat[-1]["content"]
     
-    # regex çakışmasını engellemek için string yapılandırması
     pattern_py = bt + "python(.*?)" + bt
     pattern_all = bt + "(.*?)" + bt
     
@@ -370,8 +373,13 @@ giris_metni = f"Bir şeyler yaz... [Mod: {aktif_mod_tr}] [Model: {model_etiketi}
 
 prompt = st.chat_input(giris_metni, key="chat_input")
 
-if prompt or trigger_prompt:
-    final_prompt = prompt if prompt else trigger_prompt
+# Giriş tetikleme kontrolü (Normal giriş, Şablon veya Otomatik Yeniden Deneme)
+if prompt or trigger_prompt or st.session_state.retry_prompt:
+    if st.session_state.retry_prompt:
+        final_prompt = st.session_state.retry_prompt
+        st.session_state.retry_prompt = None  # İşlem başlayınca temizle
+    else:
+        final_prompt = prompt if prompt else trigger_prompt
     
     if len(active_chat) == 0:
         yeni_baslik = final_prompt if len(final_prompt) <= 25 else final_prompt[:25] + "..."
@@ -388,6 +396,28 @@ if prompt or trigger_prompt:
         response = model.generate_content(full_prompt)
         active_chat.append({"role": "assistant", "content": response.text})
     except Exception as e:
-        active_chat.append({"role": "assistant", "content": f"Hata oluştu: {e}"})
+        err_msg = str(e)
+        # --- ÖZELLİK: Kota Limiti Yakalayıcı ve 1.5s Otomatik Failover Aktivasyonu ---
+        if "429" in err_msg or "ResourceExhausted" in err_msg or "quota" in err_msg.lower():
+            st.error("⚠️ Kullanım hakkın bitti! 1.5 saniye sonra diğer modele otomatik geçiliyor...")
+            
+            # Hatalı denemedeki kullanıcı mesajını geçmişten çıkar (yeni modelle temiz başlasın)
+            if active_chat and active_chat[-1]["role"] == "user":
+                active_chat.pop()
+            
+            # Sorumuzu kaybetmemek için kurtarma hafızasına al
+            st.session_state.retry_prompt = final_prompt
+            
+            # Diğer modele geçiş yap
+            if st.session_state.model_choice == "pro":
+                st.session_state.model_choice = "flash"
+            else:
+                st.session_state.model_choice = "pro"
+                
+            time.sleep(1.5)
+            st.rerun()
+        else:
+            # Diğer standart hatalar için normal hata çıktısı ver
+            active_chat.append({"role": "assistant", "content": f"Hata oluştu: {e}"})
     
     st.rerun()
