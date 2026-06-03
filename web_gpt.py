@@ -2,12 +2,13 @@ import streamlit as st
 import google.generativeai as genai
 import io
 import sys
-import re  # Kod bloklarını ayıklamak için gerekli kütüphane
-import time  # 1.5 saniye bekletme senaryosu için gerekli kütüphane
-import json  # Verileri kalıcı olarak kaydetmek için JSON kütüphanesi
-import os  # Dosya kontrolü için OS kütüphanesi
+import re
+import time
+import json
+import os
 from contextlib import redirect_stdout
 from gtts import gTTS
+from PIL import Image  # Görsel analizi için eklendi
 
 # Sayfa Yapılandırması
 st.set_page_config(page_title="ÖmerGPT Pro", layout="wide")
@@ -59,7 +60,6 @@ if "retry_prompt" not in st.session_state:
 # ÖNCELİKLE DOSYADAN VERİLERİ YÜKLEMEYİ DENE
 if "omer_sessions" not in st.session_state:
     if not load_chats_from_file():
-        # Eğer kayıtlı dosya yoksa varsayılan olarak sıfırdan başlat
         st.session_state.omer_sessions = {"sess_1": {"title": "Yeni Sohbet", "messages": []}} 
         st.session_state.current_session = "sess_1" 
         st.session_state.session_counter = 1
@@ -190,10 +190,18 @@ with st.sidebar:
         st.rerun()
         
     st.write("---")
+    
+    # --- YENİ: Arama Filtresi ---
     st.subheader("📁 Eski Sohbetler")
+    search_query = st.text_input("🔍 Sohbetlerde Ara...", key="chat_search")
     
     for sess_id, sess_data in reversed(list(st.session_state.omer_sessions.items())):
         baslik = sess_data["title"]
+        
+        # Eğer arama kutusu doluysa ve kelime başlıkta yoksa, bu butonu çizme (atla)
+        if search_query and search_query.lower() not in baslik.lower():
+            continue
+            
         buton_yazisi = f"🟢 {baslik}" if sess_id == st.session_state.current_session else f"💬 {baslik}"
             
         if st.button(buton_yazisi, key=f"btn_{sess_id}", use_container_width=True):
@@ -334,7 +342,8 @@ with st.sidebar:
 # ANA SOHBET EKRANI
 # =====================================================================
 
-uploaded_file = st.file_uploader("Dosya Analizi için PDF/Metin yükle", type=['pdf', 'txt'], key=f"file_{st.session_state.current_session}")
+# --- YENİ: Görsel Destekli Dosya Yükleyici ---
+uploaded_file = st.file_uploader("Dosya veya Ekran Görüntüsü Yükle (TXT, PNG, JPG)", type=['txt', 'png', 'jpg', 'jpeg'], key=f"file_{st.session_state.current_session}")
 
 model_etiketi = "pro+" if st.session_state.model_choice == "pro" else "pro"
 
@@ -424,14 +433,22 @@ if prompt or trigger_prompt or st.session_state.retry_prompt:
     active_chat.append({"role": "user", "content": final_prompt})
     
     try:
-        full_prompt = final_prompt
+        # --- YENİ: Görsel Analizi İşleme ---
         if uploaded_file:
-            content = uploaded_file.read().decode('utf-8')
-            full_prompt = f"Dosya içeriği: {content} \n Soru: {final_prompt}"
+            if uploaded_file.name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                img = Image.open(uploaded_file)
+                payload = [final_prompt, img]
+            else:
+                content = uploaded_file.read().decode('utf-8', errors='ignore')
+                full_prompt = f"Dosya içeriği: {content} \n\n Soru: {final_prompt}"
+                payload = full_prompt
+        else:
+            payload = final_prompt
         
-        response = model.generate_content(full_prompt)
+        response = model.generate_content(payload)
         active_chat.append({"role": "assistant", "content": response.text})
-        save_chats_to_file()  # Başarılı cevap geldiğinde anında kaydet
+        save_chats_to_file() 
+        
     except Exception as e:
         err_msg = str(e)
         if "429" in err_msg or "ResourceExhausted" in err_msg or "quota" in err_msg.lower():
@@ -447,7 +464,7 @@ if prompt or trigger_prompt or st.session_state.retry_prompt:
             else:
                 st.session_state.model_choice = "pro"
                 
-            save_chats_to_file()  # Durumu değiştirdikten sonra kaydet
+            save_chats_to_file()
             time.sleep(1.5)
             st.rerun()
         else:
