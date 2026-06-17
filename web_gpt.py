@@ -447,7 +447,7 @@ if prompt or trigger_prompt or st.session_state.retry_prompt:
     except Exception as e:
         err_msg = str(e)
         if "429" in err_msg or "ResourceExhausted" in err_msg or "quota" in err_msg.lower():
-            st.error("⚠️ Kullanım hakkın bitti! 1.5 saniye sonra diğer modele otomatik geçiliyor...")
+            st.error(" Kullanım hakkın bitti! 1.5 saniye sonra diğer modele otomatik geçiliyor...")
             if active_chat and active_chat[-1]["role"] == "user":
                 active_chat.pop()
             st.session_state.retry_prompt = final_prompt
